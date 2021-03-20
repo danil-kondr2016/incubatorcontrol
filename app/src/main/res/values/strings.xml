@@ -1,0 +1,11 @@
+<resources>
+    <string name="app_name">Incubator Control</string>
+    <string name="current_temperature">Current temperature</string>
+    <string name="current_humidity">Current humidity</string>
+    <string name="needed_temperature">Needed temperature</string>
+    <string name="needed_humidity">Needed humidity</string>
+    <string name="no_data" translatable="false">###</string>
+    <string name="save">Save</string>
+    <string name="temp_error">Temperature in incubator can cause death of embryos.</string>
+    <string name="temp_error_title">Danger</string>
+</resources>

@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TableLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:layout_marginTop="40dp"
+    android:stretchColumns="*"
+    android:orientation="horizontal"
+    tools:context=".MainActivity">
+
+    <TableRow>
+
+        <TextView
+            android:id="@+id/textView"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="none"
+            android:gravity="center"
+            android:maxLines="3"
+            android:scrollHorizontally="false"
+            android:text="@string/current_temperature"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/textView2"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="none"
+            android:gravity="center"
+            android:maxLines="3"
+            android:scrollHorizontally="false"
+            android:text="@string/current_humidity"
+            android:textStyle="bold" />
+    </TableRow>
+
+    <TableRow>
+
+        <TextView
+            android:id="@+id/currentTemp"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="@string/no_data"
+            android:textSize="@dimen/info_font_size"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/currentHumidity"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="@string/no_data"
+            android:textSize="@dimen/info_font_size"
+            android:textStyle="bold" />
+    </TableRow>
+
+    <TableRow>
+
+        <TextView
+            android:id="@+id/textView5"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="@string/needed_temperature"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/textView6"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="@string/needed_humidity"
+            android:textStyle="bold" />
+
+    </TableRow>
+
+    <TableRow>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/minusTemp"
+                style="@style/RegulatorButton"
+                android:layout_width="@dimen/btn_width"
+                android:layout_height="wrap_content"
+                android:minWidth="@dimen/btn_width"
+                android:onClick="onChange"
+                android:text="-" />
+
+            <TextView
+                android:id="@+id/neededTemp"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:text="@string/no_data"
+                android:textSize="@dimen/info_font_size"
+                android:textStyle="bold" />
+
+            <Button
+                android:id="@+id/plusTemp"
+                style="@style/RegulatorButton"
+                android:layout_width="@dimen/btn_width"
+                android:layout_height="wrap_content"
+                android:onClick="onChange"
+                android:text="+" />
+
+        </LinearLayout>
+
+        <LinearLayout>
+
+            <Button
+                android:id="@+id/minusHumidity"
+                style="@style/RegulatorButton"
+                android:layout_width="@dimen/btn_width"
+                android:layout_height="wrap_content"
+                android:onClick="onChange"
+                android:text="-" />
+
+            <TextView
+                android:id="@+id/neededHumidity"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:text="@string/no_data"
+                android:textSize="@dimen/info_font_size"
+                android:textStyle="bold" />
+
+            <Button
+                android:id="@+id/plusHumidity"
+                style="@style/RegulatorButton"
+                android:layout_width="@dimen/btn_width"
+                android:layout_height="wrap_content"
+                android:onClick="onChange"
+                android:text="+" />
+        </LinearLayout>
+    </TableRow>
+
+    <TableRow>
+
+        <Button
+            android:id="@+id/saveBtn"
+            android:layout_span="2"
+            android:layout_width="wrap_content"
+            android:layout_marginHorizontal="4dp"
+            android:ellipsize="none"
+            android:enabled="false"
+            android:lines="2"
+            android:onClick="onSaveChanges"
+            android:scrollHorizontally="false"
+            android:text="@string/save" />
+
+    </TableRow>
+
+    <TableRow
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" >
+
+        <Button
+            android:id="@+id/button"
+            android:layout_span="2"
+            android:layout_width="wrap_content"
+            android:layout_marginHorizontal="4dp"
+            android:ellipsize="none"
+            android:lines="2"
+            android:onClick="onDrawableTest"
+            android:scrollHorizontally="false"
+            android:text="INCUBATOR DRAWABLE TEST" />
+    </TableRow>
+</TableLayout>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Управление инкубатором</string>
+    <string name="current_temperature">Текущая температура</string>
+    <string name="current_humidity">Текущая влажность</string>
+    <string name="needed_temperature">Необходимая температура</string>
+    <string name="needed_humidity">Необходимая влажность</string>
+    <string name="save">Сохранить</string>
+    <string name="temp_error">Температура в инкубаторе может привести к гибели зародышей.</string>
+    <string name="temp_error_title">Опасность</string>
+</resources>
