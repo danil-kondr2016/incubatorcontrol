@@ -444,6 +444,7 @@ public class IncubatorStateActivity extends AppCompatActivity {
             public boolean handleMessage(@NonNull Message msg) {
                 if (msg.what == NEED_CONFIG) {
                     requestConfig();
+                    updateIncubator();
                     needConfig = false;
                 }
 
