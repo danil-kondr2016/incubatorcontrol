@@ -13,7 +13,9 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.IncubatorControl"
         android:usesCleartextTraffic="true">
-
+        <activity
+            android:name=".IncubatorSettingsActivity"
+            android:label="@string/title_activity_incubator_settings"></activity>
         <activity
             android:name=".IncubatorStateActivity"
             android:screenOrientation="portrait"
@@ -24,11 +26,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <activity
-            android:name=".MainActivity"
-            android:screenOrientation="landscape">
 
-        </activity>
     </application>
 
 </manifest>
