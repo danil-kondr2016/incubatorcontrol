@@ -56,7 +56,7 @@ public class IncubatorStateActivity extends AppCompatActivity {
     static final float HEATER_X = 237, HEATER_Y = 704;
     static final float CHAMBER_X = 92, CHAMBER_Y = 297;
     static final float SCREEN_X = 256, SCREEN_Y = 32;
-    static final float MINUS_BTN_X = 256, MENU_BTN_X = 376, PLUS_BTN_X = 496, X_BTN_Y = 120;
+    static final float MINUS_BTN_X = 376, MENU_BTN_X = 496, PLUS_BTN_X = 256, X_BTN_Y = 120;
     static final float SCREEN_FONT_SIZE = 22;
 
     static final int CURRENT_STATE_MODE = 0;
