@@ -37,7 +37,7 @@ import java.util.concurrent.TimeoutException;
 
 public class IncubatorStateActivity extends AppCompatActivity {
     public static final int REQ_TIMEOUT = 2000;
-    public static final String DEFAULT_INCUBATOR_ADDRESS = "www.incubator.local";
+    public static final String DEFAULT_INCUBATOR_ADDRESS = "incubator.local";
 
     public static final int HAS_INTERNET = 0x11;
     public static final int NO_INTERNET = 0x12;
@@ -356,36 +356,36 @@ public class IncubatorStateActivity extends AppCompatActivity {
     }
 
     boolean requestState() {
-        return makeRequest("request_state");
+        return makeRequest("request_state\r\n");
     }
 
     boolean requestConfig() {
-        return makeRequest("request_config");
+        return makeRequest("request_config\r\n");
     }
 
     boolean sendConfig() {
         boolean reqState = true;
         reqState = reqState && makeRequest(
                 String.format(Locale.US,
-                        "needed_temp %.2f",
+                        "needed_temp %.2f\r\n",
                         cfg.neededTemperature
                 )
         );
         reqState = reqState && makeRequest(
                 String.format(Locale.US,
-                        "needed_humid %.2f",
+                        "needed_humid %.2f\r\n",
                         cfg.neededHumidity
                 )
         );
         reqState = reqState && makeRequest(
                 String.format(Locale.US,
-                        "rotations_per_day %d",
+                        "rotations_per_day %d\r\n",
                         cfg.rotationsPerDay
                 )
         );
         reqState = reqState && makeRequest(
                 String.format(Locale.US,
-                        "switch_to_program %d",
+                        "switch_to_program %d\r\n",
                         cfg.currentProgram
                 )
         );
@@ -402,10 +402,13 @@ public class IncubatorStateActivity extends AppCompatActivity {
             @Override
             public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
                 Log.i(LOG_TAG, key);
-                if (key.compareTo("incubator_address") == 0)
+                if (key.compareTo("incubator_address") == 0) {
                     INCUBATOR_ADDRESS = sharedPreferences.getString(
                             "incubator_address", DEFAULT_INCUBATOR_ADDRESS
                     );
+                    requestConfig();
+                    requestState();
+                }
             }
         });
 
