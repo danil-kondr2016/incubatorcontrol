@@ -25,15 +25,17 @@ import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
+import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toolbar;
 
+import java.nio.ByteBuffer;
+import java.util.Date;
 import java.util.Locale;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 
 public class IncubatorStateActivity extends AppCompatActivity {
     public static final int REQ_TIMEOUT = 2000;
@@ -57,7 +59,11 @@ public class IncubatorStateActivity extends AppCompatActivity {
     static final float CHAMBER_X = 92, CHAMBER_Y = 297;
     static final float SCREEN_X = 256, SCREEN_Y = 32;
     static final float MINUS_BTN_X = 376, MENU_BTN_X = 496, PLUS_BTN_X = 256, X_BTN_Y = 120;
+    static final float ARCHIVE_BTN_X = 130, ARCHIVE_BTN_Y = 55;
+
     static final float SCREEN_FONT_SIZE = 22;
+    static final float SCREEN_X_OFFSET = 5;
+    static final float SCREEN_Y_OFFSET = 3;
 
     static final int CURRENT_STATE_MODE = 0;
     static final int NEEDED_TEMPERATURE_MODE  = 1;
@@ -126,6 +132,8 @@ public class IncubatorStateActivity extends AppCompatActivity {
             ivIncubatorCooler, ivIncubatorWetter, ivIncubatorHeater, ivIncubatorChamber,
             ivIncubatorScreen, ivIncubatorMinusBtn, ivIncubatorMenuBtn, ivIncubatorPlusBtn;
 
+    ImageButton ibIncubatorArchive;
+
     TextView tvIncubatorScreen;
     TextView tvIncubatorUptime;
 
@@ -145,6 +153,42 @@ public class IncubatorStateActivity extends AppCompatActivity {
     private boolean hasInternet, needConfig;
 
     SharedPreferences prefs;
+    SharedPreferences.OnSharedPreferenceChangeListener prefsListener;
+    
+    private byte[] archiveRecord() {
+        byte curTempInt, curTempFrac, curHumidInt, curHumidFrac;
+        curTempInt = (byte)state.currentTemperature;
+        curTempFrac = (byte)((state.currentTemperature - (float)curTempInt) * 255);
+        curHumidInt = (byte)state.currentHumidity;
+        curHumidFrac = (byte)((state.currentHumidity - (float)curHumidInt) * 255);
+
+        byte st = (byte)0x00;
+        st  = state.heater ? (byte)0x01 : (byte)0x00;
+        st |= state.wetter ? (byte)0x02 : (byte)0x00;
+        st |= state.cooler ? (byte)0x04 : (byte)0x00;
+
+        switch (state.chamber) {
+            case IncubatorState.CHAMBER_LEFT:
+                st |= 0x38;
+                break;
+            default:
+                st |= ((byte)state.chamber) << 3;
+        }
+
+
+        ByteBuffer bb = ByteBuffer.allocate(16);
+        bb.putLong(state.timestamp);
+        bb.put(curTempInt);
+        bb.put(curTempFrac);
+        bb.put(curHumidInt);
+        bb.put(curHumidFrac);
+        bb.put(st);
+        bb.put((byte)0x00);
+        bb.put((byte)0x00);
+        bb.put((byte)0x00);
+
+        return bb.array();
+    }
 
     private boolean makeRequest(String req) {
         try {
@@ -161,6 +205,7 @@ public class IncubatorStateActivity extends AppCompatActivity {
 
             String[] lines = str.split("\r\n");
             boolean has_error = false;
+            state.timestamp = new Date().getTime();
             for (int i = 0; i < lines.length; i++) {
                 lines[i] = lines[i].replace("\r\n", "").trim();
                 String[] args = lines[i].split(" ");
@@ -200,6 +245,7 @@ public class IncubatorStateActivity extends AppCompatActivity {
                 hTempError.sendEmptyMessage(NO_ERROR);
             }
         } catch (Exception e) {
+            hInternet.sendEmptyMessage(NO_INTERNET);
             e.printStackTrace();
             return false;
         }
@@ -398,10 +444,10 @@ public class IncubatorStateActivity extends AppCompatActivity {
 
         prefs = PreferenceManager.getDefaultSharedPreferences(this);
         INCUBATOR_ADDRESS = prefs.getString("incubator_address", DEFAULT_INCUBATOR_ADDRESS);
-        prefs.registerOnSharedPreferenceChangeListener(new SharedPreferences.OnSharedPreferenceChangeListener() {
+        prefsListener = new SharedPreferences.OnSharedPreferenceChangeListener() {
             @Override
             public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
-                Log.i(LOG_TAG, key);
+                Log.i(LOG_TAG, "sharedPreferenceChanged@" + key);
                 if (key.compareTo("incubator_address") == 0) {
                     INCUBATOR_ADDRESS = sharedPreferences.getString(
                             "incubator_address", DEFAULT_INCUBATOR_ADDRESS
@@ -410,7 +456,9 @@ public class IncubatorStateActivity extends AppCompatActivity {
                     requestState();
                 }
             }
-        });
+        };
+
+        prefs.registerOnSharedPreferenceChangeListener(prefsListener);
 
         state = new IncubatorState();
         cfg = new IncubatorConfig();
@@ -519,6 +567,18 @@ public class IncubatorStateActivity extends AppCompatActivity {
 
         alarmTimer = new Timer("IncubatorStateActivity AlarmTimer");
 
+        reqTimer.schedule(new TimerTask() {
+            @Override
+            public void run() {
+                requestState();
+
+                if (hasInternet) {
+                    if (mode == CURRENT_STATE_MODE)
+                        updateIncubator();
+                }
+            }
+        }, 0, REQ_TIMEOUT);
+
         rotTimer.scheduleAtFixedRate(new TimerTask() {
             @Override
             public void run() {
@@ -571,6 +631,7 @@ public class IncubatorStateActivity extends AppCompatActivity {
         VectorDrawable vdIncubatorChamber = (VectorDrawable)ContextCompat.getDrawable(this, R.drawable.ic_incubator_chamber);
         VectorDrawable vdIncubatorScreen = (VectorDrawable)ContextCompat.getDrawable(this, R.drawable.ic_incubator_screen0);
         VectorDrawable vdIncubatorBtn = (VectorDrawable)ContextCompat.getDrawable(this, R.drawable.ic_incubator_minus_btn);
+        VectorDrawable vdIncubatorArchive = (VectorDrawable)ContextCompat.getDrawable(this, R.drawable.ic_incubator_archive_0);
 
         int screenWidth = getApplicationContext().getResources().getDisplayMetrics().widthPixels;
         int screenHeight = getApplicationContext().getResources().getDisplayMetrics().heightPixels;
@@ -756,8 +817,8 @@ public class IncubatorStateActivity extends AppCompatActivity {
         ));
 
         tvIncubatorScreen = new TextView(this);
-        tvIncubatorScreen.setX(incubatorX + (SCREEN_X / BODY_WIDTH) * incubatorBodyWidth + 5);
-        tvIncubatorScreen.setY(incubatorY + (SCREEN_Y / BODY_HEIGHT) * incubatorBodyHeight + 3);
+        tvIncubatorScreen.setX(incubatorX + (SCREEN_X / BODY_WIDTH) * incubatorBodyWidth + SCREEN_X_OFFSET);
+        tvIncubatorScreen.setY(incubatorY + (SCREEN_Y / BODY_HEIGHT) * incubatorBodyHeight + SCREEN_Y_OFFSET);
         tvIncubatorScreen.setTextColor(Color.WHITE);
         tvIncubatorScreen.setTypeface(Typeface.MONOSPACE);
         tvIncubatorScreen.setTextSize(SCREEN_FONT_SIZE * k);
@@ -776,25 +837,27 @@ public class IncubatorStateActivity extends AppCompatActivity {
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
         ));
+
+        ibIncubatorArchive = new ImageButton(this);
+        ibIncubatorArchive.setBackgroundResource(R.drawable.ic_incubator_archive);
+        ibIncubatorArchive.setX(incubatorX + (ARCHIVE_BTN_X / BODY_WIDTH) * incubatorBodyWidth);
+        ibIncubatorArchive.setY(incubatorY + (ARCHIVE_BTN_Y / BODY_HEIGHT) * incubatorBodyHeight);
+        ibIncubatorArchive.setVisibility(View.VISIBLE);
+        ibIncubatorArchive.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                /* TODO: Incubator archive activity */
+            }
+        });
+        addContentView(ibIncubatorArchive, new ViewGroup.LayoutParams(
+                (int)(vdIncubatorArchive.getIntrinsicWidth() * k),
+                (int)(vdIncubatorArchive.getIntrinsicHeight() * k)
+        ));
     }
 
     @Override
     protected void onStart() {
         super.onStart();
-
-        requestConfig();
-
-        reqTimer.scheduleAtFixedRate(new TimerTask() {
-            @Override
-            public void run() {
-                requestState();
-
-                if (hasInternet) {
-                    if (mode == CURRENT_STATE_MODE)
-                        updateIncubator();
-                }
-            }
-        }, 0, REQ_TIMEOUT);
     }
 
     @Override

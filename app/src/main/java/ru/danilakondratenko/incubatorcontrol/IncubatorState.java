@@ -19,6 +19,8 @@ public class IncubatorState implements Parcelable {
     public int chamber;
     public long uptime;
 
+    public long timestamp;
+
     IncubatorState() {
         this.currentTemperature = NO_DATA_FLOAT;
         this.currentHumidity = NO_DATA_FLOAT;
