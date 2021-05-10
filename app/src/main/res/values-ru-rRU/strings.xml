@@ -1,9 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Управление инкубатором</string>
-    <string name="temp_error">Температура в инкубаторе может привести к гибели зародышей.</string>
-    <string name="temp_error_title">Опасность</string>
+    <string name="overheat_error">Температура в инкубаторе может привести к гибели зародышей.</string>
+    <string name="overheat_error_title">Опасность</string>
     <string name="settings">Настройки</string>
     <string name="title_activity_incubator_settings">Настройки</string>
     <string name="incubator_address">Адрес инкубатора</string>
+    <string name="temperature">Температура</string>
+    <string name="humidity">Влажность</string>
+    <string-array name="timespan_list">
+        <item>за последний час</item>
+        <item>за последний день</item>
+        <item>за последнюю неделю</item>
+        <item>за последний месяц</item>
+        <item>за последний год</item>
+    </string-array>
+    <string name="view_history_for">Посмотреть архив</string>
+    <string name="heater_state">Состояние нагревателя</string>
+    <string name="wetter_state">Состояние оросителя</string>
+    <string name="chamber_pos">Положение инкубационной камеры</string>
 </resources>

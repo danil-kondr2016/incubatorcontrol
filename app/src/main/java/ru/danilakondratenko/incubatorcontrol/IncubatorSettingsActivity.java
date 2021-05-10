@@ -3,6 +3,7 @@ package ru.danilakondratenko.incubatorcontrol;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.MenuItem;
 
 import androidx.annotation.NonNull;
@@ -54,6 +55,7 @@ public class IncubatorSettingsActivity extends AppCompatActivity {
             incubator_address.setOnPreferenceChangeListener(new Preference.OnPreferenceChangeListener() {
                 @Override
                 public boolean onPreferenceChange(Preference preference, Object newValue) {
+                    Log.i("Incubator", (String)newValue);
                     SharedPreferences.Editor editor = prefs.edit();
                     editor.putString("incubator_address", (String)newValue);
                     editor.apply();

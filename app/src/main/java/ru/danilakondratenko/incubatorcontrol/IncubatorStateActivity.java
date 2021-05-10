@@ -1,35 +1,48 @@
 package ru.danilakondratenko.incubatorcontrol;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.NotificationCompat;
 import androidx.core.content.ContextCompat;
+import androidx.fragment.app.DialogFragment;
 import androidx.preference.PreferenceManager;
 
+import android.Manifest;
+import android.app.AlertDialog;
+import android.app.Dialog;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.VectorDrawable;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
 import android.util.Log;
+import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
+import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toolbar;
 
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.PrintStream;
 import java.nio.ByteBuffer;
 import java.util.Date;
 import java.util.Locale;
@@ -38,13 +51,15 @@ import java.util.TimerTask;
 import java.util.concurrent.TimeUnit;
 
 public class IncubatorStateActivity extends AppCompatActivity {
+    /* Incubator request constants */
     public static final int REQ_TIMEOUT = 2000;
     public static final String DEFAULT_INCUBATOR_ADDRESS = "incubator.local";
 
+    /* Handler message codes */
     public static final int HAS_INTERNET = 0x11;
     public static final int NO_INTERNET = 0x12;
 
-    public static final int TEMP_ERROR = 0x13;
+    public static final int OVERHEAT_ERROR = 0x13;
     public static final int CHANGE_PHASE = 0x14;
     public static final int NO_ERROR = 0x15;
 
@@ -52,6 +67,32 @@ public class IncubatorStateActivity extends AppCompatActivity {
 
     public static final int ALARM_HEATER = 0x20;
 
+    /* Archive state masks */
+
+    public static final byte ST_ZERO    = 0b00000000;
+
+    public static final byte ST_HEATER  = 0b00000001;
+    public static final byte ST_WETTER  = 0b00000010;
+    public static final byte ST_COOLER  = 0b00000100;
+    public static final byte ST_CHAMBER = 0b00111000;
+
+    public static final byte ST_CHAMBER_LEFT    = 0b00111000;
+    public static final byte ST_CHAMBER_NEUTRAL = 0b00000000;
+    public static final byte ST_CHAMBER_RIGHT   = 0b00001000;
+    public static final byte ST_CHAMBER_ERROR   = 0b00010000;
+    public static final byte ST_CHAMBER_UNDEF   = 0b00011000;
+
+    public static final int ST_CHAMBER_SHIFT = 3;
+
+    /* Archive error masks */
+
+    public static final byte ER_ZERO          = 0b00000000;
+
+    public static final byte ER_OVERHEAT      = 0b00000001;
+    public static final byte ER_CHAMBER_ERROR = 0b00000100;
+    public static final byte ER_NO_INTERNET   = (byte) 0b10000000;
+
+    /* Values needed to calculate coordinates */
     static final float BODY_WIDTH = 605, BODY_HEIGHT = 870;
     static final float COOLER_X = 260, COOLER_Y = 765;
     static final float WETTER_X = 30, WETTER_Y = 264;
@@ -65,6 +106,7 @@ public class IncubatorStateActivity extends AppCompatActivity {
     static final float SCREEN_X_OFFSET = 5;
     static final float SCREEN_Y_OFFSET = 3;
 
+    /* Modes */
     static final int CURRENT_STATE_MODE = 0;
     static final int NEEDED_TEMPERATURE_MODE  = 1;
     static final int NEEDED_HUMIDITY_MODE = 2;
@@ -74,6 +116,7 @@ public class IncubatorStateActivity extends AppCompatActivity {
     static final int DELTA_MODE = 1;
     static final int N_MODES = 5;
 
+    /* Incubator configuration constraints */
     static final float EPSILON = 0.005f;
     static final float MIN_TEMPERATURE = 36f;
     static final float MAX_TEMPERATURE = 38f;
@@ -87,24 +130,30 @@ public class IncubatorStateActivity extends AppCompatActivity {
     static final int MAX_ROT_PER_DAY = 24;
     static final int DELTA_ROT_PER_DAY = 1;
 
+    /* Animation duration constants */
     static final long ROTATION_ANIMATION_DURATION = 3000;
+    static final long ALARM_BLINKING_DURATION = 500;
+    static final long COOLER_ROTATION_DURATION = 100;
+
+    /* Rotation animation constants */
     static final int ROTATION_ANIMATION_POS_LEFT = -45;
     static final int ROTATION_ANIMATION_POS_NEUTRAL = 0;
     static final int ROTATION_ANIMATION_POS_RIGHT = 45;
 
-    static final int SCREEN_OFF = 0;
-    static final int SCREEN_ON = 1;
-
-    static final long COOLER_ROTATION_DURATION = 100;
+    /* Cooler phase animation constants */
     static final int DELTA_PHASE = 1;
     static final int N_PHASES = 3;
 
-    static final long ALARM_BLINKING_DURATION = 500;
+    /* Screen constants */
+    static final int SCREEN_OFF = 0;
+    static final int SCREEN_ON = 1;
+    private static final int STORAGE_REQUEST = 1;
 
-    String INCUBATOR_ADDRESS = DEFAULT_INCUBATOR_ADDRESS;
+    /* Program constants */
     int NUMBER_OF_PROGRAMS;
     static final int DELTA_CURRENT_PROGRAM = 1;
 
+    /* Screen message format strings */
     static final String TEMPERATURE_FORMAT = "%.4g °C";
     static final String HUMIDITY_FORMAT = "%.2g%%";
 
@@ -126,6 +175,8 @@ public class IncubatorStateActivity extends AppCompatActivity {
 
     private static final String LOG_TAG = "Incubator";
 
+    String incubatorAddress = DEFAULT_INCUBATOR_ADDRESS;
+
     float k;
 
     ImageView ivIncubatorBody,
@@ -142,39 +193,52 @@ public class IncubatorStateActivity extends AppCompatActivity {
     int rotatePhase = 0;
     int heaterAlarmPhase = 0;
 
-    Timer reqTimer, rotTimer, alarmTimer;
+    Timer reqTimer, rotTimer, heaterAlarmTimer;
     private int mode = CURRENT_STATE_MODE;
 
     private IncubatorState state;
     private IncubatorConfig cfg;
     private int oldChamber = IncubatorState.CHAMBER_NEUTRAL;
 
-    Handler hInternet, hTempError, hCooler, hAlarm, hConfig;
+    Handler hInternet, hOverheat, hCooler, hHeaterAlarm, hConfig;
     private boolean hasInternet, needConfig;
+
+    private boolean extStoragePermitted = false;
 
     SharedPreferences prefs;
     SharedPreferences.OnSharedPreferenceChangeListener prefsListener;
     
-    private byte[] archiveRecord() {
+    private byte[] getArchiveRecord() {
         byte curTempInt, curTempFrac, curHumidInt, curHumidFrac;
         curTempInt = (byte)state.currentTemperature;
         curTempFrac = (byte)((state.currentTemperature - (float)curTempInt) * 255);
         curHumidInt = (byte)state.currentHumidity;
         curHumidFrac = (byte)((state.currentHumidity - (float)curHumidInt) * 255);
 
-        byte st = (byte)0x00;
-        st  = state.heater ? (byte)0x01 : (byte)0x00;
-        st |= state.wetter ? (byte)0x02 : (byte)0x00;
-        st |= state.cooler ? (byte)0x04 : (byte)0x00;
+        byte st = ST_ZERO;
+        st  = state.heater ? ST_HEATER : ST_ZERO;
+        st |= state.wetter ? ST_WETTER : ST_ZERO;
+        st |= state.cooler ? ST_COOLER : ST_ZERO;
 
         switch (state.chamber) {
             case IncubatorState.CHAMBER_LEFT:
-                st |= 0x38;
+                st |= ST_CHAMBER_LEFT;
                 break;
             default:
-                st |= ((byte)state.chamber) << 3;
+                st |= ((byte)state.chamber) << ST_CHAMBER_SHIFT;
         }
 
+        int neededTempValue = (int)(cfg.neededTemperature * 10) - 360;
+        int neededHumidValue = (int)(cfg.neededHumidity);
+
+        byte er = ER_ZERO;
+        er  = state.overheat ? ER_OVERHEAT : ER_ZERO;
+        er |= (state.chamber == IncubatorState.CHAMBER_ERROR)
+                ? ER_CHAMBER_ERROR : ER_ZERO;
+        er |= (state.hasInternet
+                || Float.isNaN(state.currentTemperature)
+                || Float.isNaN(state.currentHumidity))
+                ? ER_NO_INTERNET : ER_ZERO;
 
         ByteBuffer bb = ByteBuffer.allocate(16);
         bb.putLong(state.timestamp);
@@ -183,28 +247,51 @@ public class IncubatorStateActivity extends AppCompatActivity {
         bb.put(curHumidInt);
         bb.put(curHumidFrac);
         bb.put(st);
-        bb.put((byte)0x00);
-        bb.put((byte)0x00);
-        bb.put((byte)0x00);
+        bb.put((byte)(neededTempValue & 0xFF));
+        bb.put((byte)(neededHumidValue & 0xFF));
+        bb.put(er);
 
         return bb.array();
+    }
+
+    private void writeToArchive() {
+        try {
+            File archive = new File(
+                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS),
+                    "archive.dat"
+            );
+            archive.setReadable(true);
+            archive.setWritable(true);
+            if (!archive.exists())
+                archive.createNewFile();
+
+            PrintStream ps = new PrintStream(
+                    new FileOutputStream(archive, true)
+            );
+            ps.write(getArchiveRecord());
+        }
+        catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     private boolean makeRequest(String req) {
         try {
             String str = new NetworkRequestTask().execute(
-                    "http://" + INCUBATOR_ADDRESS + "/control",
+                    "http://" + incubatorAddress + "/control",
                     "POST", "text/plain", req
             ).get(REQ_TIMEOUT, TimeUnit.MILLISECONDS);
             if (str == null) {
                 hInternet.sendEmptyMessage(NO_INTERNET);
+                state.timestamp = new Date().getTime();
+                writeToArchive();
                 return false;
             } else {
                 hInternet.sendEmptyMessage(HAS_INTERNET);
             }
 
             String[] lines = str.split("\r\n");
-            boolean has_error = false;
+            boolean hasOverheat = false;
             state.timestamp = new Date().getTime();
             for (int i = 0; i < lines.length; i++) {
                 lines[i] = lines[i].replace("\r\n", "").trim();
@@ -229,8 +316,8 @@ public class IncubatorStateActivity extends AppCompatActivity {
                     oldChamber = state.chamber;
                     state.chamber = Integer.parseInt(args[1]);
                 } else if (args[0].compareTo("overheat") == 0) {
-                    hTempError.sendEmptyMessage(TEMP_ERROR);
-                    has_error = true;
+                    hOverheat.sendEmptyMessage(OVERHEAT_ERROR);
+                    hasOverheat = true;
                 } else if (args[0].compareTo("uptime") == 0) {
                     state.uptime = Long.parseLong(args[1]);
                 } else if (args[0].compareTo("number_of_programs") == 0) {
@@ -241,14 +328,19 @@ public class IncubatorStateActivity extends AppCompatActivity {
                     hConfig.sendEmptyMessage(NEED_CONFIG);
                 }
             }
-            if (!has_error) {
-                hTempError.sendEmptyMessage(NO_ERROR);
+            if (!hasOverheat) {
+                hOverheat.sendEmptyMessage(NO_ERROR);
             }
+
+
         } catch (Exception e) {
             hInternet.sendEmptyMessage(NO_INTERNET);
+            state.timestamp = new Date().getTime();
             e.printStackTrace();
+            writeToArchive();
             return false;
         }
+        writeToArchive();
         return true;
     }
 
@@ -439,17 +531,29 @@ public class IncubatorStateActivity extends AppCompatActivity {
     }
 
     @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        if (requestCode == STORAGE_REQUEST)
+        {
+            extStoragePermitted =
+                    (grantResults[0] == PackageManager.PERMISSION_GRANTED)
+                    && (grantResults[1] == PackageManager.PERMISSION_GRANTED);
+            ibIncubatorArchive.setEnabled(true);
+        }
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+    }
+
+    @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
         prefs = PreferenceManager.getDefaultSharedPreferences(this);
-        INCUBATOR_ADDRESS = prefs.getString("incubator_address", DEFAULT_INCUBATOR_ADDRESS);
+        incubatorAddress = prefs.getString("incubator_address", DEFAULT_INCUBATOR_ADDRESS);
         prefsListener = new SharedPreferences.OnSharedPreferenceChangeListener() {
             @Override
             public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
                 Log.i(LOG_TAG, "sharedPreferenceChanged@" + key);
                 if (key.compareTo("incubator_address") == 0) {
-                    INCUBATOR_ADDRESS = sharedPreferences.getString(
+                    incubatorAddress = sharedPreferences.getString(
                             "incubator_address", DEFAULT_INCUBATOR_ADDRESS
                     );
                     requestConfig();
@@ -459,6 +563,20 @@ public class IncubatorStateActivity extends AppCompatActivity {
         };
 
         prefs.registerOnSharedPreferenceChangeListener(prefsListener);
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_DENIED
+                    || checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_DENIED)
+            {
+                extStoragePermitted = false;
+                requestPermissions(new String[]{
+                        Manifest.permission.READ_EXTERNAL_STORAGE,
+                        Manifest.permission.WRITE_EXTERNAL_STORAGE
+                }, STORAGE_REQUEST);
+            } else {
+                extStoragePermitted = true;
+            }
+        }
 
         state = new IncubatorState();
         cfg = new IncubatorConfig();
@@ -482,6 +600,7 @@ public class IncubatorStateActivity extends AppCompatActivity {
                     case HAS_INTERNET:
                         if (needConfig)
                             hConfig.sendEmptyMessage(NEED_CONFIG);
+                        state.hasInternet = true;
                         hasInternet = true;
                         updateScreen(SCREEN_ON);
                         break;
@@ -494,6 +613,8 @@ public class IncubatorStateActivity extends AppCompatActivity {
             @Override
             public boolean handleMessage(@NonNull Message msg) {
                 if (msg.what == NEED_CONFIG) {
+                    Log.i(LOG_TAG, "hConfig@NEED_CONFIG");
+
                     requestConfig();
                     updateIncubator();
                     needConfig = false;
@@ -503,26 +624,26 @@ public class IncubatorStateActivity extends AppCompatActivity {
             }
         });
 
-        hTempError = new Handler(Looper.myLooper(), new Handler.Callback() {
+        hOverheat = new Handler(Looper.myLooper(), new Handler.Callback() {
 
             @Override
             public boolean handleMessage(@NonNull Message msg) {
-                if (msg.what == TEMP_ERROR) {
+                if (msg.what == OVERHEAT_ERROR) {
                     NotificationCompat.Builder bld =
                             new NotificationCompat.Builder(IncubatorStateActivity.this)
                             .setSmallIcon(android.R.drawable.ic_dialog_alert)
-                            .setContentTitle(getString(R.string.temp_error_title))
-                            .setContentText(getString(R.string.temp_error));
+                            .setContentTitle(getString(R.string.overheat_error_title))
+                            .setContentText(getString(R.string.overheat_error));
                     NotificationManager manager = (NotificationManager)getSystemService(NOTIFICATION_SERVICE);
 
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                         NotificationChannel channel = new NotificationChannel(
-                                "IncubatorTempError",
+                                "IncubatorOverheatError",
                                 "Incubator temp error channel",
                                 NotificationManager.IMPORTANCE_HIGH
                         );
                         manager.createNotificationChannel(channel);
-                        bld.setChannelId("IncubatorTempError");
+                        bld.setChannelId("IncubatorOverheatError");
                     }
 
                     Notification notification = bld.build();
@@ -551,7 +672,7 @@ public class IncubatorStateActivity extends AppCompatActivity {
             }
         });
 
-        hAlarm = new Handler(Looper.myLooper(), new Handler.Callback() {
+        hHeaterAlarm = new Handler(Looper.myLooper(), new Handler.Callback() {
             @Override
             public boolean handleMessage(@NonNull Message msg) {
                 if (msg.what == ALARM_HEATER) {
@@ -565,7 +686,7 @@ public class IncubatorStateActivity extends AppCompatActivity {
 
         rotTimer = new Timer("IncubatorStateActivity RotTimer");
 
-        alarmTimer = new Timer("IncubatorStateActivity AlarmTimer");
+        heaterAlarmTimer = new Timer("IncubatorStateActivity HeaterAlarmTimer");
 
         reqTimer.schedule(new TimerTask() {
             @Override
@@ -590,11 +711,11 @@ public class IncubatorStateActivity extends AppCompatActivity {
             }
         }, 0, COOLER_ROTATION_DURATION);
 
-        alarmTimer.scheduleAtFixedRate(new TimerTask() {
+        heaterAlarmTimer.scheduleAtFixedRate(new TimerTask() {
             @Override
             public void run() {
                 if (state.overheat)
-                    hAlarm.sendEmptyMessage(ALARM_HEATER);
+                    hHeaterAlarm.sendEmptyMessage(ALARM_HEATER);
             }
         }, 0, ALARM_BLINKING_DURATION);
 
@@ -631,7 +752,7 @@ public class IncubatorStateActivity extends AppCompatActivity {
         VectorDrawable vdIncubatorChamber = (VectorDrawable)ContextCompat.getDrawable(this, R.drawable.ic_incubator_chamber);
         VectorDrawable vdIncubatorScreen = (VectorDrawable)ContextCompat.getDrawable(this, R.drawable.ic_incubator_screen0);
         VectorDrawable vdIncubatorBtn = (VectorDrawable)ContextCompat.getDrawable(this, R.drawable.ic_incubator_minus_btn);
-        VectorDrawable vdIncubatorArchive = (VectorDrawable)ContextCompat.getDrawable(this, R.drawable.ic_incubator_archive_0);
+        VectorDrawable vdIncubatorArchive = (VectorDrawable)ContextCompat.getDrawable(this, R.drawable.ic_incubator_archive_normal);
 
         int screenWidth = getApplicationContext().getResources().getDisplayMetrics().widthPixels;
         int screenHeight = getApplicationContext().getResources().getDisplayMetrics().heightPixels;
@@ -843,10 +964,12 @@ public class IncubatorStateActivity extends AppCompatActivity {
         ibIncubatorArchive.setX(incubatorX + (ARCHIVE_BTN_X / BODY_WIDTH) * incubatorBodyWidth);
         ibIncubatorArchive.setY(incubatorY + (ARCHIVE_BTN_Y / BODY_HEIGHT) * incubatorBodyHeight);
         ibIncubatorArchive.setVisibility(View.VISIBLE);
+        ibIncubatorArchive.setEnabled(extStoragePermitted);
         ibIncubatorArchive.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                /* TODO: Incubator archive activity */
+                Intent intent = new Intent(IncubatorStateActivity.this, ArchiveActivity.class);
+                startActivity(intent);
             }
         });
         addContentView(ibIncubatorArchive, new ViewGroup.LayoutParams(
@@ -858,6 +981,8 @@ public class IncubatorStateActivity extends AppCompatActivity {
     @Override
     protected void onStart() {
         super.onStart();
+        requestConfig();
+        requestState();
     }
 
     @Override

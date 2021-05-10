@@ -1,8 +1,22 @@
+<?xml version="1.0" encoding="utf-8" ?>
 <resources>
     <string name="app_name">Incubator Control</string>
-    <string name="temp_error">Temperature in incubator can cause death of embryos.</string>
-    <string name="temp_error_title">Danger</string>
+    <string name="overheat_error">Temperature in incubator can cause death of embryos.</string>
+    <string name="overheat_error_title">Danger</string>
     <string name="settings">Settings</string>
     <string name="title_activity_incubator_settings">Settings</string>
     <string name="incubator_address">Incubator address</string>
+    <string name="temperature">Temperature</string>
+    <string name="humidity">Humidity</string>
+    <string name="view_history_for">View history for</string>
+    <string-array name="timespan_list">
+        <item>Last hour</item>
+        <item>Last day</item>
+        <item>Last week</item>
+        <item>Last month</item>
+        <item>Last year</item>
+    </string-array>
+    <string name="heater_state">Heater state</string>
+    <string name="wetter_state">Wetter state</string>
+    <string name="chamber_pos">Incubation chamber position</string>
 </resources>
