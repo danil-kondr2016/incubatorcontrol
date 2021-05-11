@@ -209,24 +209,16 @@ public class IncubatorStateActivity extends AppCompatActivity {
     SharedPreferences.OnSharedPreferenceChangeListener prefsListener;
     
     private byte[] getArchiveRecord() {
-        byte curTempInt, curTempFrac, curHumidInt, curHumidFrac;
-        curTempInt = (byte)state.currentTemperature;
-        curTempFrac = (byte)((state.currentTemperature - (float)curTempInt) * 255);
-        curHumidInt = (byte)state.currentHumidity;
-        curHumidFrac = (byte)((state.currentHumidity - (float)curHumidInt) * 255);
+        short curTemp, curHumid;
+        curTemp = (short)(state.currentTemperature * 256);
+        curHumid = (short)(state.currentHumidity * 256);
 
         byte st = ST_ZERO;
         st  = state.heater ? ST_HEATER : ST_ZERO;
         st |= state.wetter ? ST_WETTER : ST_ZERO;
         st |= state.cooler ? ST_COOLER : ST_ZERO;
 
-        switch (state.chamber) {
-            case IncubatorState.CHAMBER_LEFT:
-                st |= ST_CHAMBER_LEFT;
-                break;
-            default:
-                st |= ((byte)state.chamber) << ST_CHAMBER_SHIFT;
-        }
+        st |= ((byte)state.chamber << ST_CHAMBER_SHIFT) & ST_CHAMBER;
 
         int neededTempValue = (int)(cfg.neededTemperature * 10) - 360;
         int neededHumidValue = (int)(cfg.neededHumidity);
@@ -242,10 +234,8 @@ public class IncubatorStateActivity extends AppCompatActivity {
 
         ByteBuffer bb = ByteBuffer.allocate(16);
         bb.putLong(state.timestamp);
-        bb.put(curTempInt);
-        bb.put(curTempFrac);
-        bb.put(curHumidInt);
-        bb.put(curHumidFrac);
+        bb.putShort(curTemp);
+        bb.putShort(curHumid);
         bb.put(st);
         bb.put((byte)(neededTempValue & 0xFF));
         bb.put((byte)(neededHumidValue & 0xFF));

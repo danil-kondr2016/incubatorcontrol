@@ -29,24 +29,37 @@ import java.util.Calendar;
 public class ArchiveActivity extends AppCompatActivity {
     private static final int RECORD_SIZE = 16;
 
+    /* Timespan indexes */
+
     private static final int TIMESPAN_LAST_HOUR = 0;
     private static final int TIMESPAN_LAST_DAY = 1;
     private static final int TIMESPAN_LAST_WEEK = 2;
     private static final int TIMESPAN_LAST_MONTH = 3;
     private static final int TIMESPAN_LAST_YEAR = 4;
-    
-    private static final String LOG_TAG = "Archive";
+
+    /* Timespan length */
+
+    public static final long HOUR  = 3600000L;
+    public static final long DAY   = HOUR*24L;
+    public static final long WEEK  = DAY*7L;
+    public static final long MONTH = DAY*30L;
+    public static final long YEAR  = DAY*365L;
 
     /* Archive record indexes */
 
-    public static final int CUR_TEMP_INT       =  8;
-    public static final int CUR_TEMP_FRAC      =  9;
-    public static final int CUR_HUMID_INT      = 10;
-    public static final int CUR_HUMID_FRAC     = 11;
+    public static final int TIMESTAMP          =  0;
+    public static final int CUR_TEMP           =  8;
+    public static final int CUR_HUMID          = 10;
     public static final int ST                 = 12;
     public static final int NEEDED_TEMP        = 13;
     public static final int NEEDED_HUMID       = 14;
     public static final int ER                 = 15;
+
+    /* Archive record data length */
+
+    public static final int TIMESTAMP_LEN      = 8;
+    public static final int CUR_TEMP_LEN       = 2;
+    public static final int CUR_HUMID_LEN      = 2;
 
     /* Archive state masks */
 
@@ -82,11 +95,17 @@ public class ArchiveActivity extends AppCompatActivity {
     public static final double HEATER_OFF  = STATE_BASE + 2;
     public static final double HEATER_ON   = HEATER_OFF + 1;
 
-    public static final double CHAMBER_BASE = STATE_BASE + 5;
+    public static final double CHAMBER_BASE    = STATE_BASE + 5;
     public static final double CHAMBER_LEFT    = CHAMBER_BASE - 1;
     public static final double CHAMBER_NEUTRAL = CHAMBER_BASE;
     public static final double CHAMBER_RIGHT   = CHAMBER_BASE + 1;
 
+    /* GraphView paint parameters */
+
+    public static final int PAINT_STROKE_WIDTH = 5;
+    public static final int PAINT_DASH_LENGTH = 10;
+
+    private static final String LOG_TAG = "Archive";
 
     Spinner spTimespan;
 
@@ -140,25 +159,24 @@ public class ArchiveActivity extends AppCompatActivity {
             
             switch (timespan_type) {
                 case TIMESPAN_LAST_HOUR:
-                    timespan_begin = calendar.getTimeInMillis() - 3600000L;
+                    timespan_begin = calendar.getTimeInMillis() - HOUR;
                     break;
                 case TIMESPAN_LAST_DAY:
-                    timespan_begin = calendar.getTimeInMillis() - 86400000L;
+                    timespan_begin = calendar.getTimeInMillis() - DAY;
                     break;
                 case TIMESPAN_LAST_WEEK:
-                    timespan_begin = calendar.getTimeInMillis() - 7L*86400L*1000L;
+                    timespan_begin = calendar.getTimeInMillis() - WEEK;
                     break;
                 case TIMESPAN_LAST_MONTH:
-                    timespan_begin = calendar.getTimeInMillis() - 30L*86400L*1000L;
+                    timespan_begin = calendar.getTimeInMillis() - MONTH;
                     break;
                 case TIMESPAN_LAST_YEAR:
-                    timespan_begin = calendar.getTimeInMillis() - 365L*86400L*1000L;
+                    timespan_begin = calendar.getTimeInMillis() - YEAR;
                     break;
             }
             Log.i(LOG_TAG, String.valueOf(calendar.getTimeInMillis() - timespan_begin));
             while (istream.read(buf) != -1) {
-                ByteBuffer tbuf = ByteBuffer.wrap(buf, 0, 8);
-                long time = tbuf.getLong();
+                long time = ByteBuffer.wrap(buf, TIMESTAMP, TIMESTAMP_LEN).getLong();
 
                 if (time < timespan_begin)
                     continue;
@@ -179,8 +197,8 @@ public class ArchiveActivity extends AppCompatActivity {
                     old_heater = heater;
                 }
 
-                current_temp = (double)buf[CUR_TEMP_INT] + ((double)buf[CUR_TEMP_FRAC]) / 255.0;
-                current_humid = (double)buf[CUR_HUMID_INT] + ((double)buf[CUR_HUMID_FRAC]) / 255.0;
+                current_temp = ByteBuffer.wrap(buf, CUR_TEMP, CUR_TEMP_LEN).getShort() / 256.0;
+                current_humid = ByteBuffer.wrap(buf, CUR_HUMID, CUR_HUMID_LEN).getShort() / 256.0;
                 needed_temp = ((double)buf[NEEDED_TEMP] + 360) / 10.0;
                 needed_humid = buf[NEEDED_HUMID];
 
@@ -316,14 +334,14 @@ public class ArchiveActivity extends AppCompatActivity {
         Paint ntPaint = new Paint();
         ntPaint.setColor(Color.BLUE);
         ntPaint.setStyle(Paint.Style.STROKE);
-        ntPaint.setStrokeWidth(5);
-        ntPaint.setPathEffect(new DashPathEffect(new float[]{10, 10}, 0));
+        ntPaint.setStrokeWidth(PAINT_STROKE_WIDTH);
+        ntPaint.setPathEffect(new DashPathEffect(new float[]{PAINT_DASH_LENGTH, PAINT_DASH_LENGTH}, 0));
 
         Paint nhPaint = new Paint();
         nhPaint.setColor(Color.GREEN);
         nhPaint.setStyle(Paint.Style.STROKE);
-        nhPaint.setStrokeWidth(5);
-        nhPaint.setPathEffect(new DashPathEffect(new float[]{10, 10}, 0));
+        nhPaint.setStrokeWidth(PAINT_STROKE_WIDTH);
+        nhPaint.setPathEffect(new DashPathEffect(new float[]{PAINT_DASH_LENGTH, PAINT_DASH_LENGTH}, 0));
 
         graphView = findViewById(R.id.graph);
 
