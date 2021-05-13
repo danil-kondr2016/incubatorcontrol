@@ -1,5 +1,6 @@
 package ru.danilakondratenko.incubatorcontrol;
 
+import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 
 import android.graphics.Color;
@@ -7,6 +8,9 @@ import android.graphics.DashPathEffect;
 import android.graphics.Paint;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.Message;
 import android.util.Log;
 import android.view.View;
 import android.widget.AdapterView;
@@ -18,11 +22,11 @@ import com.jjoe64.graphview.LegendRenderer;
 import com.jjoe64.graphview.helper.DateAsXAxisLabelFormatter;
 import com.jjoe64.graphview.series.DataPoint;
 import com.jjoe64.graphview.series.LineGraphSeries;
-import com.jjoe64.graphview.series.PointsGraphSeries;
 
 import java.io.File;
 import java.io.FileInputStream;
 import java.nio.ByteBuffer;
+import java.text.DateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
 
@@ -31,19 +35,21 @@ public class ArchiveActivity extends AppCompatActivity {
 
     /* Timespan indexes */
 
-    private static final int TIMESPAN_LAST_HOUR = 0;
-    private static final int TIMESPAN_LAST_DAY = 1;
-    private static final int TIMESPAN_LAST_WEEK = 2;
-    private static final int TIMESPAN_LAST_MONTH = 3;
-    private static final int TIMESPAN_LAST_YEAR = 4;
+    private static final int TIMESPAN_CURRENT = 0;
+    private static final int TIMESPAN_LAST_HOUR = 1;
+    private static final int TIMESPAN_LAST_DAY = 2;
+    private static final int TIMESPAN_LAST_WEEK = 3;
+    private static final int TIMESPAN_LAST_MONTH = 4;
+    private static final int TIMESPAN_LAST_YEAR = 5;
 
     /* Timespan length */
 
-    public static final long HOUR  = 3600000L;
-    public static final long DAY   = HOUR*24L;
-    public static final long WEEK  = DAY*7L;
-    public static final long MONTH = DAY*30L;
-    public static final long YEAR  = DAY*365L;
+    public static final long MINUTE = 60000L;
+    public static final long HOUR   = 3600000L;
+    public static final long DAY    = HOUR*24L;
+    public static final long WEEK   = DAY*7L;
+    public static final long MONTH  = DAY*30L;
+    public static final long YEAR   = DAY*365L;
 
     /* Archive record indexes */
 
@@ -86,9 +92,9 @@ public class ArchiveActivity extends AppCompatActivity {
     public static final byte ER_CHAMBER_ERROR = 0b00000100;
     public static final byte ER_NO_INTERNET   = (byte) 0b10000000;
 
-    /* Archive state positions */
+    /* Archive state position */
 
-    public static final double STATE_BASE = 20;
+    public static final double STATE_BASE = 0;
 
     public static final double WETTER_OFF  = STATE_BASE;
     public static final double WETTER_ON   = WETTER_OFF + 1;
@@ -103,29 +109,35 @@ public class ArchiveActivity extends AppCompatActivity {
     /* GraphView paint parameters */
 
     public static final int PAINT_STROKE_WIDTH = 5;
-    public static final int PAINT_DASH_LENGTH = 10;
+    public static final int PAINT_DASH_LENGTH = 40;
+
+    /* GraphView label parameters */
+
+    public static final int NUM_VERTICAL = 5;
+    public static final int NUM_HORIZONTAL = 3;
 
     private static final String LOG_TAG = "Archive";
 
     Spinner spTimespan;
 
-    GraphView graphView;
+    GraphView gvTempGraph;
     LineGraphSeries<DataPoint> temperatureSeries;
     LineGraphSeries<DataPoint> neededTempSeries;
+
+    GraphView gvHumidGraph;
     LineGraphSeries<DataPoint> humiditySeries;
     LineGraphSeries<DataPoint> neededHumidSeries;
+
+    GraphView gvStateGraph;
     LineGraphSeries<DataPoint> heaterSeries;
     LineGraphSeries<DataPoint> wetterSeries;
     LineGraphSeries<DataPoint> chamberSeries;
 
-    void scanRecords() {
-        spTimespan.setSelection(TIMESPAN_LAST_HOUR);
-        scanRecords(TIMESPAN_LAST_HOUR);
-    }
+    Handler hGraph;
+    Runnable rGraphUpdate;
     
     void scanRecords(int timespan_type) {
         try {
-            Log.i(LOG_TAG, String.valueOf(spTimespan.getSelectedItemPosition()));
             File archive = new File(
                     Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS),
                     "archive.dat"
@@ -144,16 +156,16 @@ public class ArchiveActivity extends AppCompatActivity {
             ArrayList<DataPoint> chamberStates = new ArrayList<>();
 
             long min_time = Long.MAX_VALUE, max_time = Long.MIN_VALUE;
-            double min_data = Double.MAX_VALUE, max_data = Double.MIN_VALUE;
+            long time = 0;
 
-            double current_temp = 0, old_current_temp = 0;
-            double current_humid = 0, old_current_humid = 0;
-            double needed_temp = 0, old_needed_temp = 0;
-            double needed_humid = 0, old_needed_humid = 0;
+            double current_temp = 0;
+            double current_humid = 0;
+            double needed_temp = 0;
+            double needed_humid = 0;
             int chamber = 0, old_chamber = 0;
-            boolean heater = false, old_heater = false;
+            boolean heater = false;
             boolean wetter = false;
-            
+
             long timespan_begin = 0;
             Calendar calendar = Calendar.getInstance();
             
@@ -173,10 +185,12 @@ public class ArchiveActivity extends AppCompatActivity {
                 case TIMESPAN_LAST_YEAR:
                     timespan_begin = calendar.getTimeInMillis() - YEAR;
                     break;
+                case TIMESPAN_CURRENT:
+                    timespan_begin = calendar.getTimeInMillis() - MINUTE;
+                    break;
             }
-            Log.i(LOG_TAG, String.valueOf(calendar.getTimeInMillis() - timespan_begin));
             while (istream.read(buf) != -1) {
-                long time = ByteBuffer.wrap(buf, TIMESTAMP, TIMESTAMP_LEN).getLong();
+                time = ByteBuffer.wrap(buf, TIMESTAMP, TIMESTAMP_LEN).getLong();
 
                 if (time < timespan_begin)
                     continue;
@@ -187,15 +201,8 @@ public class ArchiveActivity extends AppCompatActivity {
                 if (time >= max_time)
                     max_time = time;
 
+
                 boolean has_internet = ((buf[ER] & ER_NO_INTERNET) == ER_NO_INTERNET);
-                if (has_internet) {
-                    old_current_temp = current_temp;
-                    old_current_humid = current_humid;
-                    old_needed_temp = needed_temp;
-                    old_needed_humid = needed_humid;
-                    old_chamber = chamber;
-                    old_heater = heater;
-                }
 
                 current_temp = ByteBuffer.wrap(buf, CUR_TEMP, CUR_TEMP_LEN).getShort() / 256.0;
                 current_humid = ByteBuffer.wrap(buf, CUR_HUMID, CUR_HUMID_LEN).getShort() / 256.0;
@@ -204,6 +211,8 @@ public class ArchiveActivity extends AppCompatActivity {
 
                 heater = (buf[ST] & ST_HEATER) == ST_HEATER;
                 wetter = (buf[ST] & ST_WETTER) == ST_WETTER;
+
+                old_chamber = chamber;
 
                 switch (buf[ST] & ST_CHAMBER) {
                     case ST_CHAMBER_LEFT:
@@ -225,56 +234,17 @@ public class ArchiveActivity extends AppCompatActivity {
                         chamber = IncubatorState.CHAMBER_ERROR;
                 }
 
-                if (has_internet) {
-                    if (current_temp <= min_data)
-                        min_data = current_temp;
-                    if (current_humid <= min_data)
-                        min_data = current_temp;
-                    if (needed_temp <= min_data)
-                        min_data = needed_temp;
-                    if (needed_humid <= min_data)
-                        min_data = needed_humid;
+                currentTemps.add(new DataPoint(time, current_temp));
+                currentHumids.add(new DataPoint(time, current_humid));
 
-                    if (current_temp >= max_data)
-                        max_data = current_temp;
-                    if (current_humid >= max_data)
-                        max_data = current_temp;
-                    if (needed_temp >= max_data)
-                        max_data = needed_temp;
-                    if (needed_humid >= max_data)
-                        max_data = needed_humid;
-                }
+                neededTemps.add(new DataPoint(time, needed_temp));
+                neededHumids.add(new DataPoint(time, needed_humid));
 
-                if (has_internet) {
-                    currentTemps.add(new DataPoint(time, current_temp));
-                    currentHumids.add(new DataPoint(time, current_humid));
-
-                    neededTemps.add(new DataPoint(time, needed_temp));
-                    neededHumids.add(new DataPoint(time, needed_humid));
-
-                    heaterStates.add(new DataPoint(time, (heater) ? HEATER_ON : HEATER_OFF));
-                    wetterStates.add(new DataPoint(time, (wetter) ? WETTER_ON : WETTER_OFF));
-                    chamberStates.add(new DataPoint(time, CHAMBER_BASE - chamber));
-                } else {
-                    currentTemps.add(new DataPoint(time, old_current_temp));
-                    currentHumids.add(new DataPoint(time, old_current_humid));
-
-                    neededTemps.add(new DataPoint(time, old_needed_temp));
-                    neededHumids.add(new DataPoint(time, old_needed_humid));
-
-                    heaterStates.add(new DataPoint(time, (old_heater) ? HEATER_ON : HEATER_OFF));
-                    wetterStates.add(new DataPoint(time, WETTER_OFF));
-                    chamberStates.add(new DataPoint(time, CHAMBER_BASE - old_chamber));
-                }
+                heaterStates.add(new DataPoint(time, (heater) ? HEATER_ON : HEATER_OFF));
+                wetterStates.add(new DataPoint(time, (wetter) ? WETTER_ON : WETTER_OFF));
+                chamberStates.add(new DataPoint(time, CHAMBER_BASE - chamber));
             }
 
-            graphView.getViewport().setXAxisBoundsManual(true);
-            graphView.getViewport().setMinX(min_time);
-            graphView.getViewport().setMaxX(max_time);
-
-            graphView.getViewport().setYAxisBoundsManual(true);
-            graphView.getViewport().setMinY(min_data - 1);
-            graphView.getViewport().setMaxY(max_data + 1);
 
             DataPoint[] c_temps = new DataPoint[currentTemps.size()];
             DataPoint[] n_temps = new DataPoint[neededTemps.size()];
@@ -300,6 +270,23 @@ public class ArchiveActivity extends AppCompatActivity {
             wetterSeries.resetData(wetters);
             chamberSeries.resetData(chambers);
 
+            gvTempGraph.getViewport().setXAxisBoundsManual(true);
+            gvTempGraph.getViewport().setMinX(min_time);
+            gvTempGraph.getViewport().setMaxX(max_time);
+            gvTempGraph.getGridLabelRenderer().setNumHorizontalLabels(NUM_HORIZONTAL);
+            gvTempGraph.getGridLabelRenderer().setNumVerticalLabels(NUM_VERTICAL);
+
+            gvHumidGraph.getViewport().setXAxisBoundsManual(true);
+            gvHumidGraph.getViewport().setMinX(min_time);
+            gvHumidGraph.getViewport().setMaxX(max_time);
+            gvHumidGraph.getGridLabelRenderer().setNumHorizontalLabels(NUM_HORIZONTAL);
+            gvHumidGraph.getGridLabelRenderer().setNumVerticalLabels(NUM_VERTICAL);
+
+            gvStateGraph.getViewport().setXAxisBoundsManual(true);
+            gvStateGraph.getViewport().setMinX(min_time);
+            gvStateGraph.getViewport().setMaxX(max_time);
+            gvStateGraph.getGridLabelRenderer().setNumHorizontalLabels(NUM_HORIZONTAL);
+            gvStateGraph.getGridLabelRenderer().setNumVerticalLabels(NUM_VERTICAL);
         }
         catch (Exception e) {
             e.printStackTrace();
@@ -321,7 +308,12 @@ public class ArchiveActivity extends AppCompatActivity {
         spTimespan.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
-                Log.i(LOG_TAG, String.valueOf(position));
+                if (position != TIMESPAN_CURRENT) {
+                    hGraph.removeCallbacks(rGraphUpdate);
+
+                } else {
+                    hGraph.postDelayed(rGraphUpdate, 2000);
+                }
                 scanRecords(position);
             }
 
@@ -343,57 +335,96 @@ public class ArchiveActivity extends AppCompatActivity {
         nhPaint.setStrokeWidth(PAINT_STROKE_WIDTH);
         nhPaint.setPathEffect(new DashPathEffect(new float[]{PAINT_DASH_LENGTH, PAINT_DASH_LENGTH}, 0));
 
-        graphView = findViewById(R.id.graph);
-
-        graphView.getViewport().setScalable(true);
+        gvTempGraph = findViewById(R.id.tempGraph);
+        gvTempGraph.getViewport().setScalable(true);
+        gvTempGraph.getGridLabelRenderer().setHumanRounding(false);
+        gvTempGraph.getGridLabelRenderer().setLabelFormatter(new DateAsXAxisLabelFormatter(this, DateFormat.getTimeInstance()));
+        gvTempGraph.getGridLabelRenderer().setNumHorizontalLabels(NUM_HORIZONTAL);
+        gvTempGraph.getGridLabelRenderer().setNumVerticalLabels(NUM_VERTICAL);
+        gvTempGraph.getLegendRenderer().setVisible(true);
+        gvTempGraph.getLegendRenderer().setAlign(LegendRenderer.LegendAlign.BOTTOM);
 
         temperatureSeries = new LineGraphSeries<>();
         temperatureSeries.setColor(Color.BLUE);
         temperatureSeries.setTitle(getString(R.string.temperature));
-        graphView.addSeries(temperatureSeries);
+        gvTempGraph.addSeries(temperatureSeries);
 
         neededTempSeries = new LineGraphSeries<>();
         neededTempSeries.setCustomPaint(ntPaint);
-        graphView.addSeries(neededTempSeries);
+        gvTempGraph.addSeries(neededTempSeries);
+
+        gvHumidGraph = findViewById(R.id.humidGraph);
+        gvHumidGraph.getViewport().setScalable(true);
+        gvHumidGraph.getGridLabelRenderer().setHumanRounding(false);
+        gvHumidGraph.getGridLabelRenderer().setLabelFormatter(new DateAsXAxisLabelFormatter(this, DateFormat.getTimeInstance()));
+        gvHumidGraph.getGridLabelRenderer().setNumHorizontalLabels(NUM_HORIZONTAL);
+        gvHumidGraph.getGridLabelRenderer().setNumVerticalLabels(NUM_VERTICAL);
+        gvHumidGraph.getLegendRenderer().setVisible(true);
+        gvHumidGraph.getLegendRenderer().setAlign(LegendRenderer.LegendAlign.BOTTOM);
 
         humiditySeries = new LineGraphSeries<>();
         humiditySeries.setColor(Color.GREEN);
         humiditySeries.setTitle(getString(R.string.humidity));
-        graphView.addSeries(humiditySeries);
+        gvHumidGraph.addSeries(humiditySeries);
 
         neededHumidSeries = new LineGraphSeries<>();
         neededHumidSeries.setCustomPaint(nhPaint);
-        graphView.addSeries(neededHumidSeries);
+        gvHumidGraph.addSeries(neededHumidSeries);
+
+        gvStateGraph = findViewById(R.id.stateGraph);
+        gvStateGraph.getViewport().setScalable(true);
+        gvStateGraph.getViewport().setYAxisBoundsManual(true);
+        gvStateGraph.getViewport().setMaxY(CHAMBER_RIGHT);
+        gvStateGraph.getGridLabelRenderer().setHumanRounding(false);
+        gvStateGraph.getGridLabelRenderer().setLabelFormatter(new DateAsXAxisLabelFormatter(this, DateFormat.getTimeInstance()));
+        gvStateGraph.getGridLabelRenderer().setNumHorizontalLabels(NUM_HORIZONTAL);
+        gvStateGraph.getGridLabelRenderer().setNumVerticalLabels(NUM_VERTICAL);
+        gvStateGraph.getLegendRenderer().setVisible(true);
+        gvStateGraph.getLegendRenderer().setAlign(LegendRenderer.LegendAlign.BOTTOM);
 
         heaterSeries = new LineGraphSeries<>();
         heaterSeries.setColor(Color.RED);
         heaterSeries.setTitle(getString(R.string.heater_state));
-        graphView.addSeries(heaterSeries);
+        gvStateGraph.addSeries(heaterSeries);
 
         wetterSeries = new LineGraphSeries<>();
         wetterSeries.setColor(Color.CYAN);
         wetterSeries.setTitle(getString(R.string.wetter_state));
-        graphView.addSeries(wetterSeries);
+        gvStateGraph.addSeries(wetterSeries);
 
         chamberSeries = new LineGraphSeries<>();
         chamberSeries.setColor(Color.LTGRAY);
         chamberSeries.setTitle(getString(R.string.chamber_pos));
-        graphView.addSeries(chamberSeries);
+        gvStateGraph.addSeries(chamberSeries);
 
-        graphView.getGridLabelRenderer().setHumanRounding(false);
-        graphView.getGridLabelRenderer().setLabelFormatter(new DateAsXAxisLabelFormatter(this));
-        graphView.getGridLabelRenderer().setNumHorizontalLabels(3);
-        graphView.getGridLabelRenderer().setHumanRounding(false);
+        hGraph = new Handler(Looper.myLooper());
 
-        graphView.getLegendRenderer().setVisible(true);
-        graphView.getLegendRenderer().setAlign(LegendRenderer.LegendAlign.BOTTOM);
+        rGraphUpdate = new Runnable() {
+            @Override
+            public void run() {
+                scanRecords(TIMESPAN_CURRENT);
+                hGraph.postDelayed(this, 2000);
+            }
+        };
     }
 
     @Override
     protected void onStart() {
         super.onStart();
 
-        scanRecords();
+        scanRecords(TIMESPAN_CURRENT);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        hGraph.postDelayed(rGraphUpdate, 2000);
+    }
+
+    @Override
+    protected void onPause() {
+        hGraph.removeCallbacks(rGraphUpdate);
+        super.onPause();
     }
 
     public void onUpdateBtnClick(View view) {

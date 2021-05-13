@@ -10,6 +10,7 @@
     <string name="humidity">Humidity</string>
     <string name="view_history_for">View history for</string>
     <string-array name="timespan_list">
+        <item>Current state</item>
         <item>Last hour</item>
         <item>Last day</item>
         <item>Last week</item>

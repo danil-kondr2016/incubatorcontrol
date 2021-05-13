@@ -9,13 +9,14 @@
     <string name="temperature">Температура</string>
     <string name="humidity">Влажность</string>
     <string-array name="timespan_list">
+        <item>в данный момент</item>
         <item>за последний час</item>
         <item>за последний день</item>
         <item>за последнюю неделю</item>
         <item>за последний месяц</item>
         <item>за последний год</item>
     </string-array>
-    <string name="view_history_for">Посмотреть архив</string>
+    <string name="view_history_for">Посмотреть показания</string>
     <string name="heater_state">Состояние нагревателя</string>
     <string name="wetter_state">Состояние оросителя</string>
     <string name="chamber_pos">Положение инкубационной камеры</string>

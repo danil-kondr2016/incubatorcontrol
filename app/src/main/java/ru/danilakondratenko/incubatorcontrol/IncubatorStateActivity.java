@@ -229,7 +229,9 @@ public class IncubatorStateActivity extends AppCompatActivity {
                 ? ER_CHAMBER_ERROR : ER_ZERO;
         er |= (state.hasInternet
                 || Float.isNaN(state.currentTemperature)
-                || Float.isNaN(state.currentHumidity))
+                || Float.isNaN(state.currentHumidity)
+                || Float.isNaN(cfg.neededTemperature)
+                || Float.isNaN(cfg.neededHumidity))
                 ? ER_NO_INTERNET : ER_ZERO;
 
         ByteBuffer bb = ByteBuffer.allocate(16);
