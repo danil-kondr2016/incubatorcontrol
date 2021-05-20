@@ -6,4 +6,8 @@
         android:selectAllOnFocus="true"
         android:singleLine="true"
         android:title="@string/incubator_address" />
+    <SwitchPreference
+        android:defaultValue="false"
+        android:key="manual_rotation_mode"
+        android:title="@string/manual_rotation_mode" />
 </PreferenceScreen>

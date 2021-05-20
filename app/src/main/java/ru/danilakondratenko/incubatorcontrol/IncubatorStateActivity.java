@@ -1,20 +1,16 @@
 package ru.danilakondratenko.incubatorcontrol;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.NotificationCompat;
 import androidx.core.content.ContextCompat;
-import androidx.fragment.app.DialogFragment;
 import androidx.preference.PreferenceManager;
 
 import android.Manifest;
-import android.app.AlertDialog;
-import android.app.Dialog;
+import android.annotation.SuppressLint;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
-import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
@@ -28,14 +24,12 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
 import android.util.Log;
-import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuItem;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
-import android.widget.EditText;
-import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toolbar;
@@ -56,25 +50,29 @@ public class IncubatorStateActivity extends AppCompatActivity {
     public static final String DEFAULT_INCUBATOR_ADDRESS = "incubator.local";
 
     /* Handler message codes */
-    public static final int HAS_INTERNET = 0x11;
-    public static final int NO_INTERNET = 0x12;
+    public static final int INCUBATOR_ACCESSIBLE = 0x11;
+    public static final int INCUBATOR_INACCESSIBLE = 0x12;
+    public static final int INCUBATOR_TURNED_OFF = 0x13;
 
-    public static final int OVERHEAT_ERROR = 0x13;
-    public static final int CHANGE_PHASE = 0x14;
-    public static final int NO_ERROR = 0x15;
+    public static final int OVERHEAT_ERROR = 0x14;
+    public static final int CHANGE_PHASE = 0x15;
+    public static final int NO_ERROR = 0x16;
 
-    public static final int NEED_CONFIG = 0x16;
+    public static final int CONFIG_AVAILABLE = 0x17;
 
     public static final int ALARM_HEATER = 0x20;
 
-    /* Archive state masks */
+    /* Archive constants */
+    public static final String ARCHIVE_FILE_NAME = "archive.dat";
 
+    /* Archive state masks */
     public static final byte ST_ZERO    = 0b00000000;
 
     public static final byte ST_HEATER  = 0b00000001;
     public static final byte ST_WETTER  = 0b00000010;
     public static final byte ST_COOLER  = 0b00000100;
     public static final byte ST_CHAMBER = 0b00111000;
+    public static final byte ST_POWER   = 0b01000000;
 
     public static final byte ST_CHAMBER_LEFT    = 0b00111000;
     public static final byte ST_CHAMBER_NEUTRAL = 0b00000000;
@@ -112,9 +110,11 @@ public class IncubatorStateActivity extends AppCompatActivity {
     static final int NEEDED_HUMIDITY_MODE = 2;
     static final int ROTATIONS_PER_DAY_MODE = 3;
     static final int CURRENT_PROGRAM_MODE = 4;
+    static final int MANUAL_ROTATION_MODE = 5;
 
     static final int DELTA_MODE = 1;
     static final int N_MODES = 5;
+    static final int N_MODES_MANUAL_ROTATION = 6;
 
     /* Incubator configuration constraints */
     static final float EPSILON = 0.005f;
@@ -131,7 +131,7 @@ public class IncubatorStateActivity extends AppCompatActivity {
     static final int DELTA_ROT_PER_DAY = 1;
 
     /* Animation duration constants */
-    static final long ROTATION_ANIMATION_DURATION = 3000;
+    static final long CHAMBER_ROTATION_ANIMATION_DURATION = 3000;
     static final long ALARM_BLINKING_DURATION = 500;
     static final long COOLER_ROTATION_DURATION = 100;
 
@@ -144,9 +144,6 @@ public class IncubatorStateActivity extends AppCompatActivity {
     static final int DELTA_PHASE = 1;
     static final int N_PHASES = 3;
 
-    /* Screen constants */
-    static final int SCREEN_OFF = 0;
-    static final int SCREEN_ON = 1;
     private static final int STORAGE_REQUEST = 1;
 
     /* Program constants */
@@ -173,6 +170,9 @@ public class IncubatorStateActivity extends AppCompatActivity {
     static final String CURRENT_PROGRAM_FORMAT =
             " Режим\n P%d";
 
+    static final String MANUAL_ROTATION_FORMAT =
+            " Ручной поворот яиц";
+
     private static final String LOG_TAG = "Incubator";
 
     String incubatorAddress = DEFAULT_INCUBATOR_ADDRESS;
@@ -181,12 +181,12 @@ public class IncubatorStateActivity extends AppCompatActivity {
 
     ImageView ivIncubatorBody,
             ivIncubatorCooler, ivIncubatorWetter, ivIncubatorHeater, ivIncubatorChamber,
-            ivIncubatorScreen, ivIncubatorMinusBtn, ivIncubatorMenuBtn, ivIncubatorPlusBtn;
+            ivIncubatorScreen;
 
-    ImageButton ibIncubatorArchive;
+    ImageView ivIncubatorMinusBtn, ivIncubatorMenuBtn, ivIncubatorPlusBtn,
+            ivIncubatorArchive;
 
-    TextView tvIncubatorScreen;
-    TextView tvIncubatorUptime;
+    TextView tvIncubatorScreen, tvIncubatorUptime;
 
     Toolbar toolbar;
 
@@ -200,8 +200,8 @@ public class IncubatorStateActivity extends AppCompatActivity {
     private IncubatorConfig cfg;
     private int oldChamber = IncubatorState.CHAMBER_NEUTRAL;
 
-    Handler hInternet, hOverheat, hCooler, hHeaterAlarm, hConfig;
-    private boolean hasInternet, needConfig;
+    Handler hIncubator, hOverheat, hConfig, hCoolerAnimation, hHeaterAlarm;
+    private boolean needConfig, manualRotationMode;
 
     private boolean extStoragePermitted = false;
 
@@ -220,6 +220,8 @@ public class IncubatorStateActivity extends AppCompatActivity {
 
         st |= ((byte)state.chamber << ST_CHAMBER_SHIFT) & ST_CHAMBER;
 
+        st |= (state.power ? ST_POWER : ST_ZERO);
+
         int neededTempValue = (int)(cfg.neededTemperature * 10) - 360;
         int neededHumidValue = (int)(cfg.neededHumidity);
 
@@ -227,7 +229,7 @@ public class IncubatorStateActivity extends AppCompatActivity {
         er  = state.overheat ? ER_OVERHEAT : ER_ZERO;
         er |= (state.chamber == IncubatorState.CHAMBER_ERROR)
                 ? ER_CHAMBER_ERROR : ER_ZERO;
-        er |= (state.hasInternet
+        er |= (state.internet
                 || Float.isNaN(state.currentTemperature)
                 || Float.isNaN(state.currentHumidity)
                 || Float.isNaN(cfg.neededTemperature)
@@ -250,7 +252,7 @@ public class IncubatorStateActivity extends AppCompatActivity {
         try {
             File archive = new File(
                     Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS),
-                    "archive.dat"
+                    ARCHIVE_FILE_NAME
             );
             archive.setReadable(true);
             archive.setWritable(true);
@@ -274,12 +276,9 @@ public class IncubatorStateActivity extends AppCompatActivity {
                     "POST", "text/plain", req
             ).get(REQ_TIMEOUT, TimeUnit.MILLISECONDS);
             if (str == null) {
-                hInternet.sendEmptyMessage(NO_INTERNET);
-                state.timestamp = new Date().getTime();
-                writeToArchive();
-                return false;
+                throw new Exception("Data is not found");
             } else {
-                hInternet.sendEmptyMessage(HAS_INTERNET);
+                hIncubator.sendEmptyMessage(INCUBATOR_ACCESSIBLE);
             }
 
             String[] lines = str.split("\r\n");
@@ -317,7 +316,9 @@ public class IncubatorStateActivity extends AppCompatActivity {
                 } else if (args[0].compareTo("current_program") == 0) {
                     cfg.currentProgram = Integer.parseInt(args[1]);
                 } else if (args[0].compareTo("changed") == 0 ) {
-                    hConfig.sendEmptyMessage(NEED_CONFIG);
+                    hConfig.sendEmptyMessage(CONFIG_AVAILABLE);
+                } else if (args[0].compareTo("turned_off") == 0) {
+                    hIncubator.sendEmptyMessage(INCUBATOR_TURNED_OFF);
                 }
             }
             if (!hasOverheat) {
@@ -326,7 +327,7 @@ public class IncubatorStateActivity extends AppCompatActivity {
 
 
         } catch (Exception e) {
-            hInternet.sendEmptyMessage(NO_INTERNET);
+            hIncubator.sendEmptyMessage(INCUBATOR_INACCESSIBLE);
             state.timestamp = new Date().getTime();
             e.printStackTrace();
             writeToArchive();
@@ -350,15 +351,15 @@ public class IncubatorStateActivity extends AppCompatActivity {
                     break;
             }
         } else {
-            ivIncubatorCooler.setImageResource(R.drawable.ic_incubator_cooler0);
+            ivIncubatorCooler.setImageResource(R.drawable.ic_incubator_cooler_off);
         }
     }
 
     void updateWetter() {
         if (state.wetter) {
-            ivIncubatorWetter.setImageResource(R.drawable.ic_incubator_wetter1);
+            ivIncubatorWetter.setImageResource(R.drawable.ic_incubator_wetter_on);
         } else {
-            ivIncubatorWetter.setImageResource(R.drawable.ic_incubator_wetter0);
+            ivIncubatorWetter.setImageResource(R.drawable.ic_incubator_wetter_off);
         }
     }
 
@@ -368,24 +369,24 @@ public class IncubatorStateActivity extends AppCompatActivity {
                 ivIncubatorHeater.setImageResource(R.drawable.ic_incubator_heater_error);
                 heaterAlarmPhase = 1;
             } else {
-                ivIncubatorHeater.setImageResource(R.drawable.ic_incubator_heater0);
+                ivIncubatorHeater.setImageResource(R.drawable.ic_incubator_heater_off);
                 heaterAlarmPhase = 0;
             }
         } else if (state.heater) {
-            ivIncubatorHeater.setImageResource(R.drawable.ic_incubator_heater1);
+            ivIncubatorHeater.setImageResource(R.drawable.ic_incubator_heater_on);
         } else {
-            ivIncubatorHeater.setImageResource(R.drawable.ic_incubator_heater0);
+            ivIncubatorHeater.setImageResource(R.drawable.ic_incubator_heater_off);
         }
     }
 
-    void updateScreen(int n_view) {
-        switch (n_view) {
-            case 0:
-                ivIncubatorScreen.setImageResource(R.drawable.ic_incubator_screen0);
-                break;
-            case 1:
-                ivIncubatorScreen.setImageResource(R.drawable.ic_incubator_screen1);
-                break;
+    void updateScreen() {
+        if (!state.internet) {
+            ivIncubatorScreen.setImageResource(R.drawable.ic_incubator_screen_error);
+        } else {
+            if (state.power)
+                ivIncubatorScreen.setImageResource(R.drawable.ic_incubator_screen_on);
+            else
+                ivIncubatorScreen.setImageResource(R.drawable.ic_incubator_screen_off);
         }
     }
 
@@ -393,7 +394,8 @@ public class IncubatorStateActivity extends AppCompatActivity {
         if (oldChamber == state.chamber)
             return;
 
-        if (state.chamber == IncubatorState.CHAMBER_ERROR)
+        if (state.chamber == IncubatorState.CHAMBER_ERROR
+                || state.chamber == IncubatorState.CHAMBER_UNDEF)
             ivIncubatorChamber.setImageResource(R.drawable.ic_incubator_chamber_error);
         else
             ivIncubatorChamber.setImageResource(R.drawable.ic_incubator_chamber);
@@ -401,19 +403,19 @@ public class IncubatorStateActivity extends AppCompatActivity {
         switch (state.chamber) {
             case IncubatorState.CHAMBER_LEFT:
                 ivIncubatorChamber.animate()
-                        .setDuration(ROTATION_ANIMATION_DURATION)
+                        .setDuration(CHAMBER_ROTATION_ANIMATION_DURATION)
                         .rotation(ROTATION_ANIMATION_POS_LEFT)
                         .start();
                 break;
             case IncubatorState.CHAMBER_NEUTRAL:
                 ivIncubatorChamber.animate()
-                        .setDuration(ROTATION_ANIMATION_DURATION)
+                        .setDuration(CHAMBER_ROTATION_ANIMATION_DURATION)
                         .rotation(ROTATION_ANIMATION_POS_NEUTRAL)
                         .start();
                 break;
             case IncubatorState.CHAMBER_RIGHT:
                 ivIncubatorChamber.animate()
-                        .setDuration(ROTATION_ANIMATION_DURATION)
+                        .setDuration(CHAMBER_ROTATION_ANIMATION_DURATION)
                         .rotation(ROTATION_ANIMATION_POS_RIGHT)
                         .start();
                 break;
@@ -422,67 +424,81 @@ public class IncubatorStateActivity extends AppCompatActivity {
                 break;
         }
     }
-    
+
+    void updateUptimeText() {
+        if ((state.uptime > 0) && (state.internet) && (state.power)) {
+            long n_day = state.uptime / 86400;
+            tvIncubatorUptime.setText(
+                    String.format(Locale.getDefault(),
+                            "%d-й день инкубации",
+                            n_day + 1)
+            );
+        } else {
+            tvIncubatorUptime.setText("");
+        }
+    }
+
+    void updateScreenText() {
+        if (!state.power) {
+            tvIncubatorScreen.setText("");
+            return;
+        }
+        switch (mode) {
+            case CURRENT_STATE_MODE:
+                tvIncubatorScreen.setText(
+                        String.format(Locale.getDefault(),
+                                CURRENT_STATE_FORMAT,
+                                state.currentTemperature, state.currentHumidity)
+                );
+                break;
+            case NEEDED_TEMPERATURE_MODE:
+                tvIncubatorScreen.setText(
+                        String.format(Locale.getDefault(),
+                                NEEDED_TEMPERATURE_FORMAT,
+                                cfg.neededTemperature)
+                );
+                break;
+            case NEEDED_HUMIDITY_MODE:
+                tvIncubatorScreen.setText(
+                        String.format(Locale.getDefault(),
+                                NEEDED_HUMIDITY_FORMAT,
+                                cfg.neededHumidity)
+                );
+                break;
+            case ROTATIONS_PER_DAY_MODE:
+                tvIncubatorScreen.setText(
+                        String.format(Locale.getDefault(),
+                                ROTATIONS_PER_DAY_FORMAT,
+                                cfg.rotationsPerDay)
+                );
+                break;
+            case CURRENT_PROGRAM_MODE:
+                tvIncubatorScreen.setText(
+                        String.format(Locale.getDefault(),
+                                CURRENT_PROGRAM_FORMAT,
+                                cfg.currentProgram)
+                );
+                break;
+            case MANUAL_ROTATION_MODE:
+                tvIncubatorScreen.setText(
+                        MANUAL_ROTATION_FORMAT
+                );
+                break;
+        }
+    }
+
     void updateIncubator() {
-        runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                updateCooler();
-                if (!state.overheat)
-                    updateHeater();
-                updateWetter();
-                updateChamber();
+        updateCooler();
+        if (!state.overheat)
+            updateHeater();
+        updateWetter();
+        updateChamber();
+        updateScreen();
 
-                if ((state.uptime > 0) && (hasInternet)) {
-                    long n_day = state.uptime / 86400;
-                    tvIncubatorUptime.setText(
-                            String.format(Locale.getDefault(),
-                                    "%d-й день инкубации",
-                                    n_day + 1)
-                    );
-                } else {
-                    tvIncubatorUptime.setText("");
-                }
-
-                switch (mode) {
-                    case CURRENT_STATE_MODE:
-                        tvIncubatorScreen.setText(
-                                String.format(Locale.getDefault(),
-                                        CURRENT_STATE_FORMAT,
-                                        state.currentTemperature, state.currentHumidity)
-                        );
-                        break;
-                    case NEEDED_TEMPERATURE_MODE:
-                        tvIncubatorScreen.setText(
-                                String.format(Locale.getDefault(),
-                                        NEEDED_TEMPERATURE_FORMAT,
-                                        cfg.neededTemperature)
-                        );
-                        break;
-                    case NEEDED_HUMIDITY_MODE:
-                        tvIncubatorScreen.setText(
-                                String.format(Locale.getDefault(),
-                                        NEEDED_HUMIDITY_FORMAT,
-                                        cfg.neededHumidity)
-                        );
-                        break;
-                    case ROTATIONS_PER_DAY_MODE:
-                        tvIncubatorScreen.setText(
-                                String.format(Locale.getDefault(),
-                                        ROTATIONS_PER_DAY_FORMAT,
-                                        cfg.rotationsPerDay)
-                        );
-                        break;
-                    case CURRENT_PROGRAM_MODE:
-                        tvIncubatorScreen.setText(
-                                String.format(Locale.getDefault(),
-                                        CURRENT_PROGRAM_FORMAT,
-                                        cfg.currentProgram)
-                        );
-                        break;
-                }
-            }
-        });
+        if (mode == CURRENT_STATE_MODE) {
+            updateUptimeText();
+            updateScreenText();
+        }
     }
 
     boolean requestState() {
@@ -529,27 +545,33 @@ public class IncubatorStateActivity extends AppCompatActivity {
             extStoragePermitted =
                     (grantResults[0] == PackageManager.PERMISSION_GRANTED)
                     && (grantResults[1] == PackageManager.PERMISSION_GRANTED);
-            ibIncubatorArchive.setEnabled(true);
+            ivIncubatorArchive.setEnabled(true);
         }
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
     }
 
+    @SuppressLint("ClickableViewAccessibility")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
         prefs = PreferenceManager.getDefaultSharedPreferences(this);
         incubatorAddress = prefs.getString("incubator_address", DEFAULT_INCUBATOR_ADDRESS);
+        manualRotationMode = prefs.getBoolean("manual_rotation_mode", false);
         prefsListener = new SharedPreferences.OnSharedPreferenceChangeListener() {
             @Override
             public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
                 Log.i(LOG_TAG, "sharedPreferenceChanged@" + key);
                 if (key.compareTo("incubator_address") == 0) {
                     incubatorAddress = sharedPreferences.getString(
-                            "incubator_address", DEFAULT_INCUBATOR_ADDRESS
+                            key, DEFAULT_INCUBATOR_ADDRESS
                     );
                     requestConfig();
                     requestState();
+                } else if (key.compareTo("manual_rotation_mode") == 0) {
+                    manualRotationMode = sharedPreferences.getBoolean(key, false);
+                    mode = CURRENT_STATE_MODE;
+                    updateIncubator();
                 }
             }
         };
@@ -573,28 +595,35 @@ public class IncubatorStateActivity extends AppCompatActivity {
         state = new IncubatorState();
         cfg = new IncubatorConfig();
 
-        hInternet = new Handler(Looper.myLooper(), new Handler.Callback() {
+        hIncubator = new Handler(Looper.myLooper(), new Handler.Callback() {
             @Override
             public boolean handleMessage(@NonNull Message msg) {
                 switch (msg.what) {
-                    case NO_INTERNET:
-                        hasInternet = false;
+                    case INCUBATOR_INACCESSIBLE:
+                        state.power = true;
+                        state.internet = false;
                         needConfig = true;
                         mode = CURRENT_STATE_MODE;
 
-                        cfg.clear();
-                        state.clear();
                         updateIncubator();
-                        updateScreen(SCREEN_OFF);
-                        tvIncubatorScreen.setText("");
 
                         break;
-                    case HAS_INTERNET:
+                    case INCUBATOR_ACCESSIBLE:
                         if (needConfig)
-                            hConfig.sendEmptyMessage(NEED_CONFIG);
-                        state.hasInternet = true;
-                        hasInternet = true;
-                        updateScreen(SCREEN_ON);
+                            hConfig.sendEmptyMessage(CONFIG_AVAILABLE);
+                        state.power = true;
+                        state.internet = true;
+
+                        updateScreen();
+                        break;
+                    case INCUBATOR_TURNED_OFF:
+                        mode = CURRENT_STATE_MODE;
+
+                        updateIncubator();
+                        tvIncubatorScreen.setText("");
+
+                        state.power = false;
+                        
                         break;
                 }
                 return false;
@@ -604,11 +633,9 @@ public class IncubatorStateActivity extends AppCompatActivity {
         hConfig = new Handler(Looper.myLooper(), new Handler.Callback() {
             @Override
             public boolean handleMessage(@NonNull Message msg) {
-                if (msg.what == NEED_CONFIG) {
-                    Log.i(LOG_TAG, "hConfig@NEED_CONFIG");
-
+                if (msg.what == CONFIG_AVAILABLE) {
                     requestConfig();
-                    updateIncubator();
+                    updateScreenText();
                     needConfig = false;
                 }
 
@@ -626,7 +653,8 @@ public class IncubatorStateActivity extends AppCompatActivity {
                             .setSmallIcon(android.R.drawable.ic_dialog_alert)
                             .setContentTitle(getString(R.string.overheat_error_title))
                             .setContentText(getString(R.string.overheat_error));
-                    NotificationManager manager = (NotificationManager)getSystemService(NOTIFICATION_SERVICE);
+                    NotificationManager manager =
+                            (NotificationManager)getSystemService(NOTIFICATION_SERVICE);
 
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                         NotificationChannel channel = new NotificationChannel(
@@ -652,7 +680,7 @@ public class IncubatorStateActivity extends AppCompatActivity {
             }
         });
 
-        hCooler = new Handler(Looper.myLooper(), new Handler.Callback() {
+        hCoolerAnimation = new Handler(Looper.myLooper(), new Handler.Callback() {
 
             @Override
             public boolean handleMessage(@NonNull Message msg) {
@@ -685,9 +713,13 @@ public class IncubatorStateActivity extends AppCompatActivity {
             public void run() {
                 requestState();
 
-                if (hasInternet) {
-                    if (mode == CURRENT_STATE_MODE)
-                        updateIncubator();
+                if (state.internet) {
+                    runOnUiThread(new Runnable() {
+                                      @Override
+                                      public void run() {
+                                          updateIncubator();
+                                      }
+                                  });
                 }
             }
         }, 0, REQ_TIMEOUT);
@@ -696,7 +728,7 @@ public class IncubatorStateActivity extends AppCompatActivity {
             @Override
             public void run() {
                 if (state.cooler) {
-                    hCooler.sendEmptyMessage(CHANGE_PHASE);
+                    hCoolerAnimation.sendEmptyMessage(CHANGE_PHASE);
                 } else {
                     rotatePhase = 0;
                 }
@@ -724,7 +756,9 @@ public class IncubatorStateActivity extends AppCompatActivity {
             public boolean onMenuItemClick(MenuItem item) {
                 Log.i(LOG_TAG, "" + item.getItemId());
                 if (item.getItemId() == R.id.config) {
-                    Intent intent = new Intent(IncubatorStateActivity.this, IncubatorSettingsActivity.class);
+                    Intent intent = new Intent(
+                            IncubatorStateActivity.this, IncubatorSettingsActivity.class
+                    );
                     startActivity(intent);
                 }
                 return true;
@@ -737,14 +771,22 @@ public class IncubatorStateActivity extends AppCompatActivity {
                 ViewGroup.LayoutParams.WRAP_CONTENT
         ));
 
-        VectorDrawable vdIncubatorBody = (VectorDrawable)ContextCompat.getDrawable(this, R.drawable.ic_incubator_body);
-        VectorDrawable vdIncubatorCooler = (VectorDrawable)ContextCompat.getDrawable(this, R.drawable.ic_incubator_cooler0);
-        VectorDrawable vdIncubatorHeater = (VectorDrawable)ContextCompat.getDrawable(this, R.drawable.ic_incubator_heater0);
-        VectorDrawable vdIncubatorWetter = (VectorDrawable)ContextCompat.getDrawable(this, R.drawable.ic_incubator_wetter0);
-        VectorDrawable vdIncubatorChamber = (VectorDrawable)ContextCompat.getDrawable(this, R.drawable.ic_incubator_chamber);
-        VectorDrawable vdIncubatorScreen = (VectorDrawable)ContextCompat.getDrawable(this, R.drawable.ic_incubator_screen0);
-        VectorDrawable vdIncubatorBtn = (VectorDrawable)ContextCompat.getDrawable(this, R.drawable.ic_incubator_minus_btn);
-        VectorDrawable vdIncubatorArchive = (VectorDrawable)ContextCompat.getDrawable(this, R.drawable.ic_incubator_archive_normal);
+        VectorDrawable vdIncubatorBody =
+                (VectorDrawable)ContextCompat.getDrawable(this, R.drawable.ic_incubator_body);
+        VectorDrawable vdIncubatorCooler =
+                (VectorDrawable)ContextCompat.getDrawable(this, R.drawable.ic_incubator_cooler_off);
+        VectorDrawable vdIncubatorHeater =
+                (VectorDrawable)ContextCompat.getDrawable(this, R.drawable.ic_incubator_heater_off);
+        VectorDrawable vdIncubatorWetter =
+                (VectorDrawable)ContextCompat.getDrawable(this, R.drawable.ic_incubator_wetter_off);
+        VectorDrawable vdIncubatorChamber =
+                (VectorDrawable)ContextCompat.getDrawable(this, R.drawable.ic_incubator_chamber);
+        VectorDrawable vdIncubatorScreen =
+                (VectorDrawable)ContextCompat.getDrawable(this, R.drawable.ic_incubator_screen_off);
+        VectorDrawable vdIncubatorBtn =
+                (VectorDrawable)ContextCompat.getDrawable(this, R.drawable.ic_incubator_minus_btn_normal);
+        VectorDrawable vdIncubatorArchive =
+                (VectorDrawable)ContextCompat.getDrawable(this, R.drawable.ic_incubator_archive_normal);
 
         int screenWidth = getApplicationContext().getResources().getDisplayMetrics().widthPixels;
         int screenHeight = getApplicationContext().getResources().getDisplayMetrics().heightPixels;
@@ -769,10 +811,12 @@ public class IncubatorStateActivity extends AppCompatActivity {
         ivIncubatorBody.setX(incubatorX);
         ivIncubatorBody.setY(incubatorY);
         ivIncubatorBody.setVisibility(View.VISIBLE);
-        addContentView(ivIncubatorBody, new ViewGroup.LayoutParams(incubatorBodyWidth, incubatorBodyHeight));
+        addContentView(ivIncubatorBody, new ViewGroup.LayoutParams(
+                incubatorBodyWidth, incubatorBodyHeight
+        ));
 
         ivIncubatorCooler = new ImageView(this);
-        ivIncubatorCooler.setImageResource(R.drawable.ic_incubator_cooler0);
+        ivIncubatorCooler.setImageResource(R.drawable.ic_incubator_cooler_off);
         ivIncubatorCooler.setX(incubatorX + (COOLER_X / BODY_WIDTH) * incubatorBodyWidth);
         ivIncubatorCooler.setY(incubatorY + (COOLER_Y / BODY_HEIGHT) * incubatorBodyHeight);
         ivIncubatorCooler.setVisibility(View.VISIBLE);
@@ -782,7 +826,7 @@ public class IncubatorStateActivity extends AppCompatActivity {
         ));
 
         ivIncubatorWetter = new ImageView(this);
-        ivIncubatorWetter.setImageResource(R.drawable.ic_incubator_wetter0);
+        ivIncubatorWetter.setImageResource(R.drawable.ic_incubator_wetter_off);
         ivIncubatorWetter.setX(incubatorX + (WETTER_X / BODY_WIDTH) * incubatorBodyWidth);
         ivIncubatorWetter.setY(incubatorY + (WETTER_Y / BODY_HEIGHT) * incubatorBodyHeight);
         ivIncubatorWetter.setVisibility(View.VISIBLE);
@@ -792,7 +836,7 @@ public class IncubatorStateActivity extends AppCompatActivity {
         ));
 
         ivIncubatorHeater = new ImageView(this);
-        ivIncubatorHeater.setImageResource(R.drawable.ic_incubator_heater0);
+        ivIncubatorHeater.setImageResource(R.drawable.ic_incubator_heater_off);
         ivIncubatorHeater.setX(incubatorX + (HEATER_X / BODY_WIDTH) * incubatorBodyWidth);
         ivIncubatorHeater.setY(incubatorY + (HEATER_Y / BODY_HEIGHT) * incubatorBodyHeight);
         ivIncubatorHeater.setVisibility(View.VISIBLE);
@@ -812,7 +856,7 @@ public class IncubatorStateActivity extends AppCompatActivity {
         ));
 
         ivIncubatorScreen = new ImageView(this);
-        ivIncubatorScreen.setImageResource(R.drawable.ic_incubator_screen0);
+        ivIncubatorScreen.setImageResource(R.drawable.ic_incubator_screen_off);
         ivIncubatorScreen.setX(incubatorX + (SCREEN_X / BODY_WIDTH) * incubatorBodyWidth);
         ivIncubatorScreen.setY(incubatorY + (SCREEN_Y / BODY_HEIGHT) * incubatorBodyHeight);
         ivIncubatorScreen.setVisibility(View.VISIBLE);
@@ -829,34 +873,50 @@ public class IncubatorStateActivity extends AppCompatActivity {
         ivIncubatorMinusBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                if (!hasInternet)
+                if (!state.internet)
                     return;
                 switch (mode) {
                     case NEEDED_TEMPERATURE_MODE:
                         if (Math.abs(cfg.neededTemperature - MIN_TEMPERATURE) >= EPSILON) {
                             cfg.neededTemperature -= DELTA_TEMPERATURE;
-                            updateIncubator();
+                            updateScreenText();
                         }
                         break;
                     case NEEDED_HUMIDITY_MODE:
                         if (Math.abs(cfg.neededHumidity - MIN_HUMIDITY) >= EPSILON) {
                             cfg.neededHumidity -= DELTA_HUMIDITY;
-                            updateIncubator();
+                            updateScreenText();
                         }
                         break;
                     case ROTATIONS_PER_DAY_MODE:
                         if ((cfg.rotationsPerDay) >= MIN_ROT_PER_DAY) {
                             cfg.rotationsPerDay -= DELTA_ROT_PER_DAY;
-                            updateIncubator();
+                            updateScreenText();
                         }
                         break;
                     case CURRENT_PROGRAM_MODE:
                         if ((cfg.currentProgram) > 0) {
                             cfg.currentProgram -= DELTA_CURRENT_PROGRAM;
-                            updateIncubator();
+                            updateScreenText();
                         }
                         break;
                 }
+            }
+        });
+        ivIncubatorMinusBtn.setOnTouchListener(new View.OnTouchListener() {
+            @Override
+            public boolean onTouch(View v, MotionEvent event) {
+                if (event.getAction() == MotionEvent.ACTION_DOWN) {
+                    if (mode == MANUAL_ROTATION_MODE) {
+                        makeRequest("rotate_left\r\n");
+                    }
+                } else if (event.getAction() == MotionEvent.ACTION_UP) {
+                    if (mode == MANUAL_ROTATION_MODE) {
+                        makeRequest("rotate_off\r\n");
+                    }
+                }
+
+                return false;
             }
         });
         addContentView(ivIncubatorMinusBtn, new ViewGroup.LayoutParams(
@@ -872,10 +932,13 @@ public class IncubatorStateActivity extends AppCompatActivity {
         ivIncubatorMenuBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                if (!hasInternet)
+                if (!state.internet)
                     return;
-                mode = (mode + DELTA_MODE) % N_MODES;
-                updateIncubator();
+                if (!manualRotationMode)
+                    mode = (mode + DELTA_MODE) % N_MODES;
+                else
+                    mode = (mode + DELTA_MODE) % N_MODES_MANUAL_ROTATION;
+                updateScreenText();
                 if (mode == CURRENT_STATE_MODE) {
                     sendConfig();
                 }
@@ -894,35 +957,52 @@ public class IncubatorStateActivity extends AppCompatActivity {
         ivIncubatorPlusBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                        if (!hasInternet)
-                            return;
-                        switch (mode) {
-                            case NEEDED_TEMPERATURE_MODE:
-                                if (Math.abs(MAX_TEMPERATURE - cfg.neededTemperature) >= EPSILON) {
-                                    cfg.neededTemperature += DELTA_TEMPERATURE;
-                                    updateIncubator();
-                                }
-                                break;
-                            case NEEDED_HUMIDITY_MODE:
-                                if (Math.abs(MAX_HUMIDITY - cfg.neededHumidity) >= EPSILON) {
-                                    cfg.neededHumidity += DELTA_HUMIDITY;
-                                    updateIncubator();
-                                }
-                                break;
-                            case ROTATIONS_PER_DAY_MODE:
-                                if ((cfg.rotationsPerDay) <= MAX_ROT_PER_DAY) {
-                                    cfg.rotationsPerDay += DELTA_ROT_PER_DAY;
-                                    updateIncubator();
-                                }
-                                break;
-                            case CURRENT_PROGRAM_MODE:
-                                if ((cfg.currentProgram) < NUMBER_OF_PROGRAMS-1) {
-                                    cfg.currentProgram += DELTA_CURRENT_PROGRAM;
-                                    updateIncubator();
-                                }
-                                break;
+                if (!state.internet)
+                    return;
+
+                switch (mode) {
+                    case NEEDED_TEMPERATURE_MODE:
+                        if (Math.abs(MAX_TEMPERATURE - cfg.neededTemperature) >= EPSILON) {
+                            cfg.neededTemperature += DELTA_TEMPERATURE;
+                            updateScreenText();
                         }
+                        break;
+                    case NEEDED_HUMIDITY_MODE:
+                        if (Math.abs(MAX_HUMIDITY - cfg.neededHumidity) >= EPSILON) {
+                            cfg.neededHumidity += DELTA_HUMIDITY;
+                            updateScreenText();
+                        }
+                        break;
+                    case ROTATIONS_PER_DAY_MODE:
+                        if ((cfg.rotationsPerDay) <= MAX_ROT_PER_DAY) {
+                            cfg.rotationsPerDay += DELTA_ROT_PER_DAY;
+                            updateScreenText();
+                        }
+                        break;
+                    case CURRENT_PROGRAM_MODE:
+                        if ((cfg.currentProgram) < NUMBER_OF_PROGRAMS - 1) {
+                            cfg.currentProgram += DELTA_CURRENT_PROGRAM;
+                            updateScreenText();
+                        }
+                        break;
+                }
+            }
+        });
+        ivIncubatorPlusBtn.setOnTouchListener(new View.OnTouchListener() {
+            @Override
+            public boolean onTouch(View v, MotionEvent event) {
+                if (event.getAction() == MotionEvent.ACTION_DOWN) {
+                     if (mode == MANUAL_ROTATION_MODE) {
+                        makeRequest("rotate_right\r\n");
                     }
+                } else if (event.getAction() == MotionEvent.ACTION_UP) {
+                    if (mode == MANUAL_ROTATION_MODE) {
+                        makeRequest("rotate_off\r\n");
+                    }
+                }
+
+                return false;
+            }
         });
         addContentView(ivIncubatorPlusBtn, new ViewGroup.LayoutParams(
                 (int)(vdIncubatorBtn.getIntrinsicWidth() * k),
@@ -951,20 +1031,20 @@ public class IncubatorStateActivity extends AppCompatActivity {
                 ViewGroup.LayoutParams.WRAP_CONTENT
         ));
 
-        ibIncubatorArchive = new ImageButton(this);
-        ibIncubatorArchive.setBackgroundResource(R.drawable.ic_incubator_archive);
-        ibIncubatorArchive.setX(incubatorX + (ARCHIVE_BTN_X / BODY_WIDTH) * incubatorBodyWidth);
-        ibIncubatorArchive.setY(incubatorY + (ARCHIVE_BTN_Y / BODY_HEIGHT) * incubatorBodyHeight);
-        ibIncubatorArchive.setVisibility(View.VISIBLE);
-        ibIncubatorArchive.setEnabled(extStoragePermitted);
-        ibIncubatorArchive.setOnClickListener(new View.OnClickListener() {
+        ivIncubatorArchive = new ImageView(this);
+        ivIncubatorArchive.setBackgroundResource(R.drawable.ic_incubator_archive);
+        ivIncubatorArchive.setX(incubatorX + (ARCHIVE_BTN_X / BODY_WIDTH) * incubatorBodyWidth);
+        ivIncubatorArchive.setY(incubatorY + (ARCHIVE_BTN_Y / BODY_HEIGHT) * incubatorBodyHeight);
+        ivIncubatorArchive.setVisibility(View.VISIBLE);
+        ivIncubatorArchive.setEnabled(extStoragePermitted);
+        ivIncubatorArchive.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 Intent intent = new Intent(IncubatorStateActivity.this, ArchiveActivity.class);
                 startActivity(intent);
             }
         });
-        addContentView(ibIncubatorArchive, new ViewGroup.LayoutParams(
+        addContentView(ivIncubatorArchive, new ViewGroup.LayoutParams(
                 (int)(vdIncubatorArchive.getIntrinsicWidth() * k),
                 (int)(vdIncubatorArchive.getIntrinsicHeight() * k)
         ));

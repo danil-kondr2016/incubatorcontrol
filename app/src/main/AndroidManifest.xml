@@ -15,11 +15,12 @@
         android:theme="@style/Theme.IncubatorControl"
         android:usesCleartextTraffic="true">
         <activity
-            android:name=".ArchiveActivity" />
+            android:name=".ArchiveActivity"
+            android:screenOrientation="portrait" />
         <activity
             android:name=".IncubatorSettingsActivity"
             android:label="@string/title_activity_incubator_settings"
-            android:screenOrientation="landscape" />
+            android:screenOrientation="portrait" />
         <activity
             android:name=".IncubatorStateActivity"
             android:screenOrientation="portrait"

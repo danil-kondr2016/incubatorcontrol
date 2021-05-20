@@ -1,6 +1,5 @@
 package ru.danilakondratenko.incubatorcontrol;
 
-import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 
 import android.graphics.Color;
@@ -10,8 +9,6 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
-import android.os.Message;
-import android.util.Log;
 import android.view.View;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
@@ -82,8 +79,6 @@ public class ArchiveActivity extends AppCompatActivity {
     public static final byte ST_CHAMBER_ERROR   = 0b00010000;
     public static final byte ST_CHAMBER_UNDEF   = 0b00011000;
 
-    public static final int ST_CHAMBER_SHIFT = 3;
-
     /* Archive error masks */
 
     public static final byte ER_ZERO          = 0b00000000;
@@ -94,17 +89,14 @@ public class ArchiveActivity extends AppCompatActivity {
 
     /* Archive state position */
 
-    public static final double STATE_BASE = 0;
-
-    public static final double WETTER_OFF  = STATE_BASE;
+    public static final double WETTER_OFF  = 0;
     public static final double WETTER_ON   = WETTER_OFF + 1;
-    public static final double HEATER_OFF  = STATE_BASE + 2;
+    public static final double HEATER_OFF  = 0;
     public static final double HEATER_ON   = HEATER_OFF + 1;
 
-    public static final double CHAMBER_BASE    = STATE_BASE + 5;
-    public static final double CHAMBER_LEFT    = CHAMBER_BASE - 1;
-    public static final double CHAMBER_NEUTRAL = CHAMBER_BASE;
-    public static final double CHAMBER_RIGHT   = CHAMBER_BASE + 1;
+    public static final double CHAMBER_NEUTRAL = 0;
+    public static final double CHAMBER_LEFT    = CHAMBER_NEUTRAL - 1;
+    public static final double CHAMBER_RIGHT   = CHAMBER_NEUTRAL + 1;
 
     /* GraphView paint parameters */
 
@@ -128,7 +120,7 @@ public class ArchiveActivity extends AppCompatActivity {
     LineGraphSeries<DataPoint> humiditySeries;
     LineGraphSeries<DataPoint> neededHumidSeries;
 
-    GraphView gvStateGraph;
+    GraphView gvChamberGraph;
     LineGraphSeries<DataPoint> heaterSeries;
     LineGraphSeries<DataPoint> wetterSeries;
     LineGraphSeries<DataPoint> chamberSeries;
@@ -140,7 +132,7 @@ public class ArchiveActivity extends AppCompatActivity {
         try {
             File archive = new File(
                     Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS),
-                    "archive.dat"
+                    IncubatorStateActivity.ARCHIVE_FILE_NAME
             );
             archive.setReadable(true);
 
@@ -242,7 +234,7 @@ public class ArchiveActivity extends AppCompatActivity {
 
                 heaterStates.add(new DataPoint(time, (heater) ? HEATER_ON : HEATER_OFF));
                 wetterStates.add(new DataPoint(time, (wetter) ? WETTER_ON : WETTER_OFF));
-                chamberStates.add(new DataPoint(time, CHAMBER_BASE - chamber));
+                chamberStates.add(new DataPoint(time, CHAMBER_NEUTRAL - chamber));
             }
 
 
@@ -282,11 +274,11 @@ public class ArchiveActivity extends AppCompatActivity {
             gvHumidGraph.getGridLabelRenderer().setNumHorizontalLabels(NUM_HORIZONTAL);
             gvHumidGraph.getGridLabelRenderer().setNumVerticalLabels(NUM_VERTICAL);
 
-            gvStateGraph.getViewport().setXAxisBoundsManual(true);
-            gvStateGraph.getViewport().setMinX(min_time);
-            gvStateGraph.getViewport().setMaxX(max_time);
-            gvStateGraph.getGridLabelRenderer().setNumHorizontalLabels(NUM_HORIZONTAL);
-            gvStateGraph.getGridLabelRenderer().setNumVerticalLabels(NUM_VERTICAL);
+            gvChamberGraph.getViewport().setXAxisBoundsManual(true);
+            gvChamberGraph.getViewport().setMinX(min_time);
+            gvChamberGraph.getViewport().setMaxX(max_time);
+            gvChamberGraph.getGridLabelRenderer().setNumHorizontalLabels(NUM_HORIZONTAL);
+            gvChamberGraph.getGridLabelRenderer().setNumVerticalLabels(NUM_VERTICAL);
         }
         catch (Exception e) {
             e.printStackTrace();
@@ -338,11 +330,14 @@ public class ArchiveActivity extends AppCompatActivity {
         gvTempGraph = findViewById(R.id.tempGraph);
         gvTempGraph.getViewport().setScalable(true);
         gvTempGraph.getGridLabelRenderer().setHumanRounding(false);
-        gvTempGraph.getGridLabelRenderer().setLabelFormatter(new DateAsXAxisLabelFormatter(this, DateFormat.getTimeInstance()));
+        gvTempGraph.getGridLabelRenderer().setLabelFormatter(
+                new DateAsXAxisLabelFormatter(this, DateFormat.getTimeInstance()));
         gvTempGraph.getGridLabelRenderer().setNumHorizontalLabels(NUM_HORIZONTAL);
         gvTempGraph.getGridLabelRenderer().setNumVerticalLabels(NUM_VERTICAL);
         gvTempGraph.getLegendRenderer().setVisible(true);
         gvTempGraph.getLegendRenderer().setAlign(LegendRenderer.LegendAlign.BOTTOM);
+        gvTempGraph.getSecondScale().setMinY(HEATER_OFF);
+        gvTempGraph.getSecondScale().setMaxY(HEATER_ON);
 
         temperatureSeries = new LineGraphSeries<>();
         temperatureSeries.setColor(Color.BLUE);
@@ -353,14 +348,22 @@ public class ArchiveActivity extends AppCompatActivity {
         neededTempSeries.setCustomPaint(ntPaint);
         gvTempGraph.addSeries(neededTempSeries);
 
+        heaterSeries = new LineGraphSeries<>();
+        heaterSeries.setColor(Color.RED);
+        heaterSeries.setTitle(getString(R.string.heater_state));
+        gvTempGraph.getSecondScale().addSeries(heaterSeries);
+
         gvHumidGraph = findViewById(R.id.humidGraph);
         gvHumidGraph.getViewport().setScalable(true);
         gvHumidGraph.getGridLabelRenderer().setHumanRounding(false);
-        gvHumidGraph.getGridLabelRenderer().setLabelFormatter(new DateAsXAxisLabelFormatter(this, DateFormat.getTimeInstance()));
+        gvHumidGraph.getGridLabelRenderer().setLabelFormatter(
+                new DateAsXAxisLabelFormatter(this, DateFormat.getTimeInstance()));
         gvHumidGraph.getGridLabelRenderer().setNumHorizontalLabels(NUM_HORIZONTAL);
         gvHumidGraph.getGridLabelRenderer().setNumVerticalLabels(NUM_VERTICAL);
         gvHumidGraph.getLegendRenderer().setVisible(true);
         gvHumidGraph.getLegendRenderer().setAlign(LegendRenderer.LegendAlign.BOTTOM);
+        gvHumidGraph.getSecondScale().setMinY(WETTER_OFF);
+        gvHumidGraph.getSecondScale().setMaxY(WETTER_ON);
 
         humiditySeries = new LineGraphSeries<>();
         humiditySeries.setColor(Color.GREEN);
@@ -371,31 +374,28 @@ public class ArchiveActivity extends AppCompatActivity {
         neededHumidSeries.setCustomPaint(nhPaint);
         gvHumidGraph.addSeries(neededHumidSeries);
 
-        gvStateGraph = findViewById(R.id.stateGraph);
-        gvStateGraph.getViewport().setScalable(true);
-        gvStateGraph.getViewport().setYAxisBoundsManual(true);
-        gvStateGraph.getViewport().setMaxY(CHAMBER_RIGHT);
-        gvStateGraph.getGridLabelRenderer().setHumanRounding(false);
-        gvStateGraph.getGridLabelRenderer().setLabelFormatter(new DateAsXAxisLabelFormatter(this, DateFormat.getTimeInstance()));
-        gvStateGraph.getGridLabelRenderer().setNumHorizontalLabels(NUM_HORIZONTAL);
-        gvStateGraph.getGridLabelRenderer().setNumVerticalLabels(NUM_VERTICAL);
-        gvStateGraph.getLegendRenderer().setVisible(true);
-        gvStateGraph.getLegendRenderer().setAlign(LegendRenderer.LegendAlign.BOTTOM);
-
-        heaterSeries = new LineGraphSeries<>();
-        heaterSeries.setColor(Color.RED);
-        heaterSeries.setTitle(getString(R.string.heater_state));
-        gvStateGraph.addSeries(heaterSeries);
-
         wetterSeries = new LineGraphSeries<>();
         wetterSeries.setColor(Color.CYAN);
         wetterSeries.setTitle(getString(R.string.wetter_state));
-        gvStateGraph.addSeries(wetterSeries);
+        gvHumidGraph.getSecondScale().addSeries(wetterSeries);
+
+        gvChamberGraph = findViewById(R.id.chamberGraph);
+        gvChamberGraph.getViewport().setScalable(true);
+        gvChamberGraph.getViewport().setYAxisBoundsManual(true);
+        gvChamberGraph.getViewport().setMinY(CHAMBER_LEFT);
+        gvChamberGraph.getViewport().setMaxY(CHAMBER_RIGHT);
+        gvChamberGraph.getGridLabelRenderer().setHumanRounding(false);
+        gvChamberGraph.getGridLabelRenderer().setLabelFormatter(
+                new DateAsXAxisLabelFormatter(this, DateFormat.getTimeInstance()));
+        gvChamberGraph.getGridLabelRenderer().setNumHorizontalLabels(NUM_HORIZONTAL);
+        gvChamberGraph.getGridLabelRenderer().setNumVerticalLabels(NUM_VERTICAL);
+        gvChamberGraph.getLegendRenderer().setVisible(true);
+        gvChamberGraph.getLegendRenderer().setAlign(LegendRenderer.LegendAlign.BOTTOM);
 
         chamberSeries = new LineGraphSeries<>();
         chamberSeries.setColor(Color.LTGRAY);
         chamberSeries.setTitle(getString(R.string.chamber_pos));
-        gvStateGraph.addSeries(chamberSeries);
+        gvChamberGraph.addSeries(chamberSeries);
 
         hGraph = new Handler(Looper.myLooper());
 
@@ -418,7 +418,7 @@ public class ArchiveActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
-        hGraph.postDelayed(rGraphUpdate, 2000);
+        hGraph.postDelayed(rGraphUpdate, IncubatorStateActivity.REQ_TIMEOUT);
     }
 
     @Override

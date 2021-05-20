@@ -17,7 +17,7 @@ public class IncubatorState {
     public long uptime;
 
     public long timestamp;
-    public boolean hasInternet;
+    public boolean internet, power;
 
     IncubatorState() {
         this.currentTemperature = NO_DATA_FLOAT;
@@ -29,7 +29,8 @@ public class IncubatorState {
         this.chamber = CHAMBER_NEUTRAL;
         this.overheat = false;
         this.uptime = 0;
-        this.hasInternet = false;
+        this.internet = false;
+        this.power = false;
     }
 
     public void clear() {
@@ -42,6 +43,7 @@ public class IncubatorState {
         this.chamber = CHAMBER_NEUTRAL;
         this.overheat = false;
         this.uptime = 0;
-        this.hasInternet = false;
+        this.internet = false;
+        this.power = false;
     }
 }

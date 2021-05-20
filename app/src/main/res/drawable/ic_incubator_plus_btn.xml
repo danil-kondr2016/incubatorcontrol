@@ -1,15 +1,6 @@
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="59.999985dp"
-    android:height="59.999985dp"
-    android:viewportWidth="15.874996"
-    android:viewportHeight="15.874996">
-  <path
-      android:pathData="M7.9375,7.9375m-7.5595,0a7.5595,7.5595 135,1 1,15.119 0a7.5595,7.5595 0,1 1,-15.119 0"
-      android:strokeWidth="0.5291667"
-      android:fillColor="#ffffff"
-      android:strokeColor="#000000"/>
-  <path
-      android:fillColor="#FF000000"
-      android:pathData="m8.9242,2.9943l0,4.112l4.112,0l0,1.255l-4.112,0l0,4.112L7.6839,12.4733L7.6839,8.3613L3.572,8.3613L3.572,7.1063l4.112,0l0,-4.112z"
-      android:strokeWidth="0.26458335"/>
-</vector>
+<selector
+    xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_pressed="true"
+        android:drawable="@drawable/ic_incubator_plus_btn_pressed" />
+    <item android:drawable="@drawable/ic_incubator_plus_btn_normal" />
+</selector>
