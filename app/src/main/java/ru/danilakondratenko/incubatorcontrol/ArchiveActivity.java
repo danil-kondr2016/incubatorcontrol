@@ -131,7 +131,7 @@ public class ArchiveActivity extends AppCompatActivity {
     void scanRecords(int timespan_type) {
         try {
             File archive = new File(
-                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS),
+                    Environment.getExternalStorageDirectory(),
                     IncubatorStateActivity.ARCHIVE_FILE_NAME
             );
             archive.setReadable(true);

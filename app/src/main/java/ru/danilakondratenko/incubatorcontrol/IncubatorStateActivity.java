@@ -251,7 +251,7 @@ public class IncubatorStateActivity extends AppCompatActivity {
     private void writeToArchive() {
         try {
             File archive = new File(
-                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS),
+                    Environment.getExternalStorageDirectory(),
                     ARCHIVE_FILE_NAME
             );
             archive.setReadable(true);
@@ -439,7 +439,7 @@ public class IncubatorStateActivity extends AppCompatActivity {
     }
 
     void updateScreenText() {
-        if (!state.power) {
+        if (!state.power || !state.internet) {
             tvIncubatorScreen.setText("");
             return;
         }
