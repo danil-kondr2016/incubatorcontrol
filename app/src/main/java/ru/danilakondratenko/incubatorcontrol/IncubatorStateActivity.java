@@ -2,6 +2,7 @@ package ru.danilakondratenko.incubatorcontrol;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.widget.Toolbar;
 import androidx.core.app.NotificationCompat;
 import androidx.core.content.ContextCompat;
 import androidx.preference.PreferenceManager;
@@ -28,6 +29,7 @@ import android.os.Looper;
 import android.os.Message;
 import android.util.Log;
 import android.view.Menu;
+import android.view.MenuInflater;
 import android.view.MenuItem;
 import android.view.MotionEvent;
 import android.view.View;
@@ -35,7 +37,6 @@ import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.widget.ImageView;
 import android.widget.TextView;
-import android.widget.Toolbar;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -551,6 +552,24 @@ public class IncubatorStateActivity extends AppCompatActivity {
     }
 
     @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+        MenuInflater inflater = getMenuInflater();
+        inflater.inflate(R.menu.incubator_menu, menu);
+        return true;
+    }
+
+    @Override
+    public boolean onOptionsItemSelected(@NonNull MenuItem item) {
+        if (item.getItemId() == R.id.config) {
+            Intent intent = new Intent(
+                    IncubatorStateActivity.this, IncubatorSettingsActivity.class
+            );
+            startActivity(intent);
+        }
+        return super.onOptionsItemSelected(item);
+    }
+
+    @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         if (requestCode == STORAGE_REQUEST)
         {
@@ -759,25 +778,8 @@ public class IncubatorStateActivity extends AppCompatActivity {
                 WindowManager.LayoutParams.FLAG_FULLSCREEN);
 
         toolbar = new Toolbar(this);
-        toolbar.inflateMenu(R.menu.incubator_menu);
-
-        Menu menu = toolbar.getMenu();
-        MenuItem miConfig = (MenuItem)menu.findItem(R.id.config);
-        miConfig.setOnMenuItemClickListener(new MenuItem.OnMenuItemClickListener() {
-            @Override
-            public boolean onMenuItemClick(MenuItem item) {
-                Log.i(LOG_TAG, "" + item.getItemId());
-                if (item.getItemId() == R.id.config) {
-                    Intent intent = new Intent(
-                            IncubatorStateActivity.this, IncubatorSettingsActivity.class
-                    );
-                    startActivity(intent);
-                }
-                return true;
-            }
-        });
         toolbar.setBackgroundResource(R.color.colorPrimary);
-        setActionBar(toolbar);
+        setSupportActionBar(toolbar);
         addContentView(toolbar, new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
