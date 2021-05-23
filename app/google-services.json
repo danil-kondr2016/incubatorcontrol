@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "165106581349",
+    "project_id": "incubatorcontrol",
+    "storage_bucket": "incubatorcontrol.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:165106581349:android:8b9b8b0efec03ac341ab8c",
+        "android_client_info": {
+          "package_name": "ru.danilakondratenko.incubatorcontrol"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "165106581349-b8bom0hcfapilslmvu94ubptud1kjke0.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyALIBL_UoGxeyCTOyvZQvBa4AB7bQHwuMw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "165106581349-b8bom0hcfapilslmvu94ubptud1kjke0.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
