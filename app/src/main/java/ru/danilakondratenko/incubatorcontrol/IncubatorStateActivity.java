@@ -18,6 +18,7 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.Drawable;
 import android.graphics.drawable.VectorDrawable;
 import android.os.Build;
 import android.os.Bundle;
@@ -782,22 +783,22 @@ public class IncubatorStateActivity extends AppCompatActivity {
                 ViewGroup.LayoutParams.WRAP_CONTENT
         ));
 
-        VectorDrawable vdIncubatorBody =
-                (VectorDrawable)ContextCompat.getDrawable(this, R.drawable.ic_incubator_body);
-        VectorDrawable vdIncubatorCooler =
-                (VectorDrawable)ContextCompat.getDrawable(this, R.drawable.ic_incubator_cooler_off);
-        VectorDrawable vdIncubatorHeater =
-                (VectorDrawable)ContextCompat.getDrawable(this, R.drawable.ic_incubator_heater_off);
-        VectorDrawable vdIncubatorWetter =
-                (VectorDrawable)ContextCompat.getDrawable(this, R.drawable.ic_incubator_wetter_off);
-        VectorDrawable vdIncubatorChamber =
-                (VectorDrawable)ContextCompat.getDrawable(this, R.drawable.ic_incubator_chamber);
-        VectorDrawable vdIncubatorScreen =
-                (VectorDrawable)ContextCompat.getDrawable(this, R.drawable.ic_incubator_screen_off);
-        VectorDrawable vdIncubatorBtn =
-                (VectorDrawable)ContextCompat.getDrawable(this, R.drawable.ic_incubator_minus_btn_normal);
-        VectorDrawable vdIncubatorArchive =
-                (VectorDrawable)ContextCompat.getDrawable(this, R.drawable.ic_incubator_archive_normal);
+        Drawable dIncubatorBody =
+                ContextCompat.getDrawable(this, R.drawable.ic_incubator_body);
+        Drawable dIncubatorCooler =
+                ContextCompat.getDrawable(this, R.drawable.ic_incubator_cooler_off);
+        Drawable dIncubatorHeater =
+                ContextCompat.getDrawable(this, R.drawable.ic_incubator_heater_off);
+        Drawable dIncubatorWetter =
+                ContextCompat.getDrawable(this, R.drawable.ic_incubator_wetter_off);
+        Drawable dIncubatorChamber =
+                ContextCompat.getDrawable(this, R.drawable.ic_incubator_chamber);
+        Drawable dIncubatorScreen =
+                ContextCompat.getDrawable(this, R.drawable.ic_incubator_screen_off);
+        Drawable dIncubatorBtn =
+                ContextCompat.getDrawable(this, R.drawable.ic_incubator_minus_btn_normal);
+        Drawable dIncubatorArchive =
+                ContextCompat.getDrawable(this, R.drawable.ic_incubator_archive_normal);
 
         int screenWidth = getApplicationContext().getResources().getDisplayMetrics().widthPixels;
         int screenHeight = getApplicationContext().getResources().getDisplayMetrics().heightPixels;
@@ -807,8 +808,8 @@ public class IncubatorStateActivity extends AppCompatActivity {
 
         /* Creating incubator GUI views */
 
-        int incubatorBodyDrawableWidth = vdIncubatorBody.getIntrinsicWidth();
-        int incubatorBodyDrawableHeight = vdIncubatorBody.getIntrinsicHeight();
+        int incubatorBodyDrawableWidth = dIncubatorBody.getIntrinsicWidth();
+        int incubatorBodyDrawableHeight = dIncubatorBody.getIntrinsicHeight();
         int incubatorBodyWidth = screenWidth - margin * 2;
         k = incubatorBodyWidth / (float)incubatorBodyDrawableWidth;
 
@@ -832,8 +833,8 @@ public class IncubatorStateActivity extends AppCompatActivity {
         ivIncubatorCooler.setY(incubatorY + (COOLER_Y / BODY_HEIGHT) * incubatorBodyHeight);
         ivIncubatorCooler.setVisibility(View.VISIBLE);
         addContentView(ivIncubatorCooler, new ViewGroup.LayoutParams(
-                (int)(vdIncubatorCooler.getIntrinsicWidth() * k),
-                (int)(vdIncubatorCooler.getIntrinsicHeight() * k)
+                (int)(dIncubatorCooler.getIntrinsicWidth() * k),
+                (int)(dIncubatorCooler.getIntrinsicHeight() * k)
         ));
 
         ivIncubatorWetter = new ImageView(this);
@@ -842,8 +843,8 @@ public class IncubatorStateActivity extends AppCompatActivity {
         ivIncubatorWetter.setY(incubatorY + (WETTER_Y / BODY_HEIGHT) * incubatorBodyHeight);
         ivIncubatorWetter.setVisibility(View.VISIBLE);
         addContentView(ivIncubatorWetter, new ViewGroup.LayoutParams(
-                (int)(vdIncubatorWetter.getIntrinsicWidth() * k),
-                (int)(vdIncubatorWetter.getIntrinsicHeight() * k)
+                (int)(dIncubatorWetter.getIntrinsicWidth() * k),
+                (int)(dIncubatorWetter.getIntrinsicHeight() * k)
         ));
 
         ivIncubatorHeater = new ImageView(this);
@@ -852,8 +853,8 @@ public class IncubatorStateActivity extends AppCompatActivity {
         ivIncubatorHeater.setY(incubatorY + (HEATER_Y / BODY_HEIGHT) * incubatorBodyHeight);
         ivIncubatorHeater.setVisibility(View.VISIBLE);
         addContentView(ivIncubatorHeater, new ViewGroup.LayoutParams(
-                (int)(vdIncubatorHeater.getIntrinsicWidth() * k),
-                (int)(vdIncubatorHeater.getIntrinsicHeight() * k)
+                (int)(dIncubatorHeater.getIntrinsicWidth() * k),
+                (int)(dIncubatorHeater.getIntrinsicHeight() * k)
         ));
 
         ivIncubatorChamber = new ImageView(this);
@@ -862,8 +863,8 @@ public class IncubatorStateActivity extends AppCompatActivity {
         ivIncubatorChamber.setY(incubatorY + (CHAMBER_Y / BODY_HEIGHT) * incubatorBodyHeight);
         ivIncubatorChamber.setVisibility(View.VISIBLE);
         addContentView(ivIncubatorChamber, new ViewGroup.LayoutParams(
-                (int)(vdIncubatorChamber.getIntrinsicWidth() * k),
-                (int)(vdIncubatorChamber.getIntrinsicHeight() * k)
+                (int)(dIncubatorChamber.getIntrinsicWidth() * k),
+                (int)(dIncubatorChamber.getIntrinsicHeight() * k)
         ));
 
         ivIncubatorScreen = new ImageView(this);
@@ -883,8 +884,8 @@ public class IncubatorStateActivity extends AppCompatActivity {
             }
         });
         addContentView(ivIncubatorScreen, new ViewGroup.LayoutParams(
-                (int)(vdIncubatorScreen.getIntrinsicWidth() * k),
-                (int)(vdIncubatorScreen.getIntrinsicHeight() * k)
+                (int)(dIncubatorScreen.getIntrinsicWidth() * k),
+                (int)(dIncubatorScreen.getIntrinsicHeight() * k)
         ));
 
         ivIncubatorMinusBtn = new ImageView(this);
@@ -943,8 +944,8 @@ public class IncubatorStateActivity extends AppCompatActivity {
             }
         });
         addContentView(ivIncubatorMinusBtn, new ViewGroup.LayoutParams(
-                (int)(vdIncubatorBtn.getIntrinsicWidth() * k),
-                (int)(vdIncubatorBtn.getIntrinsicHeight() * k)
+                (int)(dIncubatorBtn.getIntrinsicWidth() * k),
+                (int)(dIncubatorBtn.getIntrinsicHeight() * k)
         ));
 
         ivIncubatorMenuBtn = new ImageView(this);
@@ -968,8 +969,8 @@ public class IncubatorStateActivity extends AppCompatActivity {
             }
         });
         addContentView(ivIncubatorMenuBtn, new ViewGroup.LayoutParams(
-                (int)(vdIncubatorBtn.getIntrinsicWidth() * k),
-                (int)(vdIncubatorBtn.getIntrinsicHeight() * k)
+                (int)(dIncubatorBtn.getIntrinsicWidth() * k),
+                (int)(dIncubatorBtn.getIntrinsicHeight() * k)
         ));
 
         ivIncubatorPlusBtn = new ImageView(this);
@@ -1029,8 +1030,8 @@ public class IncubatorStateActivity extends AppCompatActivity {
             }
         });
         addContentView(ivIncubatorPlusBtn, new ViewGroup.LayoutParams(
-                (int)(vdIncubatorBtn.getIntrinsicWidth() * k),
-                (int)(vdIncubatorBtn.getIntrinsicHeight() * k)
+                (int)(dIncubatorBtn.getIntrinsicWidth() * k),
+                (int)(dIncubatorBtn.getIntrinsicHeight() * k)
         ));
 
         tvIncubatorScreen = new TextView(this);
@@ -1069,8 +1070,8 @@ public class IncubatorStateActivity extends AppCompatActivity {
             }
         });
         addContentView(ivIncubatorArchive, new ViewGroup.LayoutParams(
-                (int)(vdIncubatorArchive.getIntrinsicWidth() * k),
-                (int)(vdIncubatorArchive.getIntrinsicHeight() * k)
+                (int)(dIncubatorArchive.getIntrinsicWidth() * k),
+                (int)(dIncubatorArchive.getIntrinsicHeight() * k)
         ));
     }
 
