@@ -8,9 +8,11 @@ import androidx.preference.PreferenceManager;
 
 import android.Manifest;
 import android.annotation.SuppressLint;
+import android.app.AlertDialog;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
@@ -199,6 +201,7 @@ public class IncubatorStateActivity extends AppCompatActivity {
     private IncubatorState state;
     private IncubatorConfig cfg;
     private int oldChamber = IncubatorState.CHAMBER_NEUTRAL;
+    private int screenTaps = 0;
 
     Handler hIncubator, hOverheat, hConfig, hCoolerAnimation, hHeaterAlarm;
     private boolean needConfig, manualRotationMode;
@@ -207,7 +210,7 @@ public class IncubatorStateActivity extends AppCompatActivity {
 
     SharedPreferences prefs;
     SharedPreferences.OnSharedPreferenceChangeListener prefsListener;
-    
+
     private byte[] getArchiveRecord() {
         short curTemp, curHumid;
         curTemp = (short)(state.currentTemperature * 256);
@@ -336,7 +339,7 @@ public class IncubatorStateActivity extends AppCompatActivity {
         writeToArchive();
         return true;
     }
-
+    
     void updateCooler() {
         if (state.cooler) {
             switch (rotatePhase) {
@@ -390,17 +393,13 @@ public class IncubatorStateActivity extends AppCompatActivity {
         }
     }
 
-    void updateChamber() {
-        if (oldChamber == state.chamber)
-            return;
-
-        if (state.chamber == IncubatorState.CHAMBER_ERROR
-                || state.chamber == IncubatorState.CHAMBER_UNDEF)
-            ivIncubatorChamber.setImageResource(R.drawable.ic_incubator_chamber_error);
-        else
-            ivIncubatorChamber.setImageResource(R.drawable.ic_incubator_chamber);
-
-        switch (state.chamber) {
+    void rotateChamber(int pos) {
+        int npos = pos;
+        if (npos < IncubatorState.CHAMBER_LEFT)
+            npos = IncubatorState.CHAMBER_LEFT;
+        if (npos > IncubatorState.CHAMBER_RIGHT)
+            npos = IncubatorState.CHAMBER_RIGHT;
+        switch (npos) {
             case IncubatorState.CHAMBER_LEFT:
                 ivIncubatorChamber.animate()
                         .setDuration(CHAMBER_ROTATION_ANIMATION_DURATION)
@@ -419,10 +418,22 @@ public class IncubatorStateActivity extends AppCompatActivity {
                         .rotation(ROTATION_ANIMATION_POS_RIGHT)
                         .start();
                 break;
-            case IncubatorState.CHAMBER_ERROR:
-                ivIncubatorChamber.setRotation(ROTATION_ANIMATION_POS_NEUTRAL);
-                break;
         }
+    }
+
+    void updateChamber() {
+        if (oldChamber == state.chamber)
+            return;
+
+        if (state.chamber == IncubatorState.CHAMBER_ERROR
+                || state.chamber == IncubatorState.CHAMBER_UNDEF)
+            ivIncubatorChamber.setImageResource(R.drawable.ic_incubator_chamber_error);
+        else
+            ivIncubatorChamber.setImageResource(R.drawable.ic_incubator_chamber);
+
+        rotateChamber(state.chamber);
+        if (state.chamber == IncubatorState.CHAMBER_ERROR)
+            ivIncubatorChamber.setRotation(ROTATION_ANIMATION_POS_NEUTRAL);
     }
 
     void updateUptimeText() {
@@ -860,6 +871,17 @@ public class IncubatorStateActivity extends AppCompatActivity {
         ivIncubatorScreen.setX(incubatorX + (SCREEN_X / BODY_WIDTH) * incubatorBodyWidth);
         ivIncubatorScreen.setY(incubatorY + (SCREEN_Y / BODY_HEIGHT) * incubatorBodyHeight);
         ivIncubatorScreen.setVisibility(View.VISIBLE);
+        ivIncubatorScreen.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                screenTaps++;
+                if (screenTaps < 2)
+                    return;
+
+                makeRequest("toggle_incubator\r\n");
+                screenTaps = 0;
+            }
+        });
         addContentView(ivIncubatorScreen, new ViewGroup.LayoutParams(
                 (int)(vdIncubatorScreen.getIntrinsicWidth() * k),
                 (int)(vdIncubatorScreen.getIntrinsicHeight() * k)
@@ -909,6 +931,7 @@ public class IncubatorStateActivity extends AppCompatActivity {
                 if (event.getAction() == MotionEvent.ACTION_DOWN) {
                     if (mode == MANUAL_ROTATION_MODE) {
                         makeRequest("rotate_left\r\n");
+                        rotateChamber(state.chamber - 1);
                     }
                 } else if (event.getAction() == MotionEvent.ACTION_UP) {
                     if (mode == MANUAL_ROTATION_MODE) {
@@ -994,6 +1017,7 @@ public class IncubatorStateActivity extends AppCompatActivity {
                 if (event.getAction() == MotionEvent.ACTION_DOWN) {
                      if (mode == MANUAL_ROTATION_MODE) {
                         makeRequest("rotate_right\r\n");
+                        rotateChamber(state.chamber + 1);
                     }
                 } else if (event.getAction() == MotionEvent.ACTION_UP) {
                     if (mode == MANUAL_ROTATION_MODE) {
