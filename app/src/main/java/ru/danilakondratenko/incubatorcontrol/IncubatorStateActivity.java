@@ -9,18 +9,15 @@ import androidx.preference.PreferenceManager;
 
 import android.Manifest;
 import android.annotation.SuppressLint;
-import android.app.AlertDialog;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
-import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
-import android.graphics.drawable.VectorDrawable;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
@@ -47,6 +44,12 @@ import java.util.Locale;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.TimeUnit;
+
+import retrofit2.Call;
+import retrofit2.Callback;
+import retrofit2.Response;
+import retrofit2.Retrofit;
+import retrofit2.converter.scalars.ScalarsConverterFactory;
 
 public class IncubatorStateActivity extends AppCompatActivity {
     /* Incubator request constants */
@@ -151,7 +154,6 @@ public class IncubatorStateActivity extends AppCompatActivity {
     private static final int STORAGE_REQUEST = 1;
 
     /* Program constants */
-    int NUMBER_OF_PROGRAMS;
     static final int DELTA_CURRENT_PROGRAM = 1;
 
     /* Screen message format strings */
@@ -209,9 +211,12 @@ public class IncubatorStateActivity extends AppCompatActivity {
     private boolean needConfig, manualRotationMode;
 
     private boolean extStoragePermitted = false;
+    private boolean overheatNotified = false;
 
     SharedPreferences prefs;
     SharedPreferences.OnSharedPreferenceChangeListener prefsListener;
+
+    NotificationManager notificationManager;
 
     private byte[] getArchiveRecord() {
         short curTemp, curHumid;
@@ -274,74 +279,51 @@ public class IncubatorStateActivity extends AppCompatActivity {
         }
     }
 
-    private boolean makeRequest(String req) {
-        try {
-            String str = new NetworkRequestTask().execute(
-                    "http://" + incubatorAddress + "/control",
-                    "POST", "text/plain", req
-            ).get(REQ_TIMEOUT, TimeUnit.MILLISECONDS);
-            if (str == null) {
-                throw new Exception("Data is not found");
-            } else {
-                hIncubator.sendEmptyMessage(INCUBATOR_ACCESSIBLE);
-            }
+    private void makeRequest(String req) {
+        Retrofit retrofit = new Retrofit.Builder()
+                .baseUrl("http://" + incubatorAddress)
+                .addConverterFactory(ScalarsConverterFactory.create())
+                .build();
 
-            String[] lines = str.split("\r\n");
-            boolean hasOverheat = false;
-            state.timestamp = new Date().getTime();
-            for (int i = 0; i < lines.length; i++) {
-                lines[i] = lines[i].replace("\r\n", "").trim();
-                String[] args = lines[i].split(" ");
-                if (args[0].compareTo("current_temp") == 0) {
-                    state.currentTemperature = Float.parseFloat(args[1]);
-                } else if (args[0].compareTo("current_humid") == 0) {
-                    state.currentHumidity = Float.parseFloat(args[1]);
-                } else if (args[0].compareTo("needed_temp") == 0) {
-                    cfg.neededTemperature = Float.parseFloat(args[1]);
-                } else if (args[0].compareTo("needed_humid") == 0) {
-                    cfg.neededHumidity = Float.parseFloat(args[1]);
-                } else if (args[0].compareTo("rotations_per_day") == 0) {
-                    cfg.rotationsPerDay = Integer.parseInt(args[1]);
-                } else if (args[0].compareTo("heater") == 0) {
-                    state.heater = Integer.parseInt(args[1]) > 0;
-                } else if (args[0].compareTo("cooler") == 0) {
-                    state.cooler = Integer.parseInt(args[1]) > 0;
-                } else if (args[0].compareTo("wetter") == 0) {
-                    state.wetter = Integer.parseInt(args[1]) > 0;
-                } else if (args[0].compareTo("chamber") == 0) {
+        TextRequest textRequest = retrofit.create(TextRequest.class);
+        Call<String> call = textRequest.getResponse(req);
+        call.timeout().deadline(REQ_TIMEOUT, TimeUnit.MILLISECONDS);
+        call.enqueue(new Callback<String>() {
+            @Override
+            public void onResponse(@NonNull Call<String> call, @NonNull Response<String> response) {
+                String[] strList = response.body().replace("\r\n", "\n").split("\n");
+                if (req.startsWith("request_state")) {
                     oldChamber = state.chamber;
-                    state.chamber = Integer.parseInt(args[1]);
-                } else if (args[0].compareTo("overheat") == 0) {
-                    hOverheat.sendEmptyMessage(OVERHEAT_ERROR);
-                    hasOverheat = true;
-                } else if (args[0].compareTo("uptime") == 0) {
-                    state.uptime = Long.parseLong(args[1]);
-                } else if (args[0].compareTo("number_of_programs") == 0) {
-                    NUMBER_OF_PROGRAMS = Integer.parseInt(args[1]);
-                } else if (args[0].compareTo("current_program") == 0) {
-                    cfg.currentProgram = Integer.parseInt(args[1]);
-                } else if (args[0].compareTo("changed") == 0 ) {
-                    hConfig.sendEmptyMessage(CONFIG_AVAILABLE);
-                } else if (args[0].compareTo("turned_off") == 0) {
-                    hIncubator.sendEmptyMessage(INCUBATOR_TURNED_OFF);
+                    state = IncubatorState.deserialize(strList);
+
+                    if (state.overheat)
+                        hOverheat.sendEmptyMessage(OVERHEAT_ERROR);
+                    else
+                        hOverheat.sendEmptyMessage(NO_ERROR);
+
+                    if (state.isChanged)
+                        hConfig.sendEmptyMessage(CONFIG_AVAILABLE);
+                    if (!state.power)
+                        hIncubator.sendEmptyMessage(INCUBATOR_TURNED_OFF);
+                    else
+                        hIncubator.sendEmptyMessage(INCUBATOR_ACCESSIBLE);
+                } else if (req.startsWith("request_config")) {
+                    cfg = IncubatorConfig.deserialize(strList);
+                    updateScreenText();
+                    needConfig = false;
                 }
-            }
-            if (!hasOverheat) {
-                hOverheat.sendEmptyMessage(NO_ERROR);
+                state.timestamp = new Date().getTime();
+                writeToArchive();
             }
 
-
-        } catch (Exception e) {
-            hIncubator.sendEmptyMessage(INCUBATOR_INACCESSIBLE);
-            state.timestamp = new Date().getTime();
-            e.printStackTrace();
-            writeToArchive();
-            return false;
-        }
-        writeToArchive();
-        return true;
+            @Override
+            public void onFailure(Call<String> call, Throwable t) {
+                hIncubator.sendEmptyMessage(INCUBATOR_INACCESSIBLE);
+                writeToArchive();
+            }
+        });
     }
-    
+
     void updateCooler() {
         if (state.cooler) {
             switch (rotatePhase) {
@@ -514,41 +496,39 @@ public class IncubatorStateActivity extends AppCompatActivity {
         }
     }
 
-    boolean requestState() {
-        return makeRequest("request_state\r\n");
+    void requestState() {
+        makeRequest("request_state\r\n");
     }
 
-    boolean requestConfig() {
-        return makeRequest("request_config\r\n");
+    void requestConfig() {
+        makeRequest("request_config\r\n");
     }
 
-    boolean sendConfig() {
-        boolean reqState = true;
-        reqState = reqState && makeRequest(
+    void sendConfig() {
+        makeRequest(
                 String.format(Locale.US,
                         "needed_temp %.2f\r\n",
                         cfg.neededTemperature
                 )
         );
-        reqState = reqState && makeRequest(
+        makeRequest(
                 String.format(Locale.US,
                         "needed_humid %.2f\r\n",
                         cfg.neededHumidity
                 )
         );
-        reqState = reqState && makeRequest(
+        makeRequest(
                 String.format(Locale.US,
                         "rotations_per_day %d\r\n",
                         cfg.rotationsPerDay
                 )
         );
-        reqState = reqState && makeRequest(
+        makeRequest(
                 String.format(Locale.US,
                         "switch_to_program %d\r\n",
                         cfg.currentProgram
                 )
         );
-        return reqState;
     }
 
     @Override
@@ -570,7 +550,8 @@ public class IncubatorStateActivity extends AppCompatActivity {
     }
 
     @Override
-    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+    public void onRequestPermissionsResult(
+            int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         if (requestCode == STORAGE_REQUEST)
         {
             extStoragePermitted =
@@ -581,10 +562,12 @@ public class IncubatorStateActivity extends AppCompatActivity {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
     }
 
-    @SuppressLint("ClickableViewAccessibility")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        notificationManager =
+                (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
 
         prefs = PreferenceManager.getDefaultSharedPreferences(this);
         incubatorAddress = prefs.getString("incubator_address", DEFAULT_INCUBATOR_ADDRESS);
@@ -645,7 +628,7 @@ public class IncubatorStateActivity extends AppCompatActivity {
                         state.power = true;
                         state.internet = true;
 
-                        updateScreen();
+                        updateIncubator();
                         break;
                     case INCUBATOR_TURNED_OFF:
                         mode = CURRENT_STATE_MODE;
@@ -666,8 +649,6 @@ public class IncubatorStateActivity extends AppCompatActivity {
             public boolean handleMessage(@NonNull Message msg) {
                 if (msg.what == CONFIG_AVAILABLE) {
                     requestConfig();
-                    updateScreenText();
-                    needConfig = false;
                 }
 
                 return true;
@@ -679,33 +660,29 @@ public class IncubatorStateActivity extends AppCompatActivity {
             @Override
             public boolean handleMessage(@NonNull Message msg) {
                 if (msg.what == OVERHEAT_ERROR) {
-                    NotificationCompat.Builder bld =
-                            new NotificationCompat.Builder(IncubatorStateActivity.this)
-                            .setSmallIcon(android.R.drawable.ic_dialog_alert)
-                            .setContentTitle(getString(R.string.overheat_error_title))
-                            .setContentText(getString(R.string.overheat_error));
-                    NotificationManager manager =
-                            (NotificationManager)getSystemService(NOTIFICATION_SERVICE);
-
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                         NotificationChannel channel = new NotificationChannel(
                                 "IncubatorOverheatError",
-                                "Incubator temp error channel",
+                                "Incubator overheat error channel",
                                 NotificationManager.IMPORTANCE_HIGH
                         );
-                        manager.createNotificationChannel(channel);
-                        bld.setChannelId("IncubatorOverheatError");
+                        notificationManager.createNotificationChannel(channel);
                     }
+
+                    NotificationCompat.Builder bld =
+                            new NotificationCompat.Builder(IncubatorStateActivity.this,
+                                    "IncubatorOverheatError")
+                                    .setSmallIcon(android.R.drawable.ic_dialog_alert)
+                                    .setContentTitle(getString(R.string.overheat_error_title))
+                                    .setContentText(getString(R.string.overheat_error));
+
 
                     Notification notification = bld.build();
-
-                    if (!state.overheat) {
-                        manager.notify(1, notification);
-                    }
-
-                    state.overheat = true;
+                    if (!overheatNotified)
+                        notificationManager.notify(1, notification);
+                    overheatNotified = true;
                 } else if (msg.what == NO_ERROR) {
-                    state.overheat = false;
+                    overheatNotified = false;
                 }
                 return true;
             }
@@ -1006,7 +983,7 @@ public class IncubatorStateActivity extends AppCompatActivity {
                         }
                         break;
                     case CURRENT_PROGRAM_MODE:
-                        if ((cfg.currentProgram) < NUMBER_OF_PROGRAMS - 1) {
+                        if ((cfg.currentProgram) < cfg.numberOfPrograms - 1) {
                             cfg.currentProgram += DELTA_CURRENT_PROGRAM;
                             updateScreenText();
                         }
@@ -1037,8 +1014,10 @@ public class IncubatorStateActivity extends AppCompatActivity {
         ));
 
         tvIncubatorScreen = new TextView(this);
-        tvIncubatorScreen.setX(incubatorX + (SCREEN_X / BODY_WIDTH) * incubatorBodyWidth + SCREEN_X_OFFSET);
-        tvIncubatorScreen.setY(incubatorY + (SCREEN_Y / BODY_HEIGHT) * incubatorBodyHeight + SCREEN_Y_OFFSET);
+        tvIncubatorScreen.setX(
+                incubatorX + (SCREEN_X / BODY_WIDTH) * incubatorBodyWidth + SCREEN_X_OFFSET);
+        tvIncubatorScreen.setY(
+                incubatorY + (SCREEN_Y / BODY_HEIGHT) * incubatorBodyHeight + SCREEN_Y_OFFSET);
         tvIncubatorScreen.setTextColor(Color.WHITE);
         tvIncubatorScreen.setTypeface(Typeface.MONOSPACE);
         tvIncubatorScreen.setTextSize(SCREEN_FONT_SIZE * k);
