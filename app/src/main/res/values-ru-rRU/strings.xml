@@ -20,5 +20,5 @@
     <string name="heater_state">Состояние нагревателя</string>
     <string name="wetter_state">Состояние оросителя</string>
     <string name="chamber_pos">Положение инкубационной камеры</string>
-    <string name="manual_rotation_mode">Режим ручного поворотоа инкубационной камеры</string>
+    <string name="manual_rotation_mode">Режим ручного поворота инкубационной камеры</string>
 </resources>

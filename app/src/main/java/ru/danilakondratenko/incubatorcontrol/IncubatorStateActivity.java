@@ -208,7 +208,7 @@ public class IncubatorStateActivity extends AppCompatActivity {
     private int screenTaps = 0;
 
     Handler hIncubator, hOverheat, hConfig, hCoolerAnimation, hHeaterAlarm;
-    private boolean needConfig, manualRotationMode;
+    private boolean needConfig = true, manualRotationMode;
 
     private boolean extStoragePermitted = false;
     private boolean overheatNotified = false;
@@ -285,12 +285,13 @@ public class IncubatorStateActivity extends AppCompatActivity {
                 .addConverterFactory(ScalarsConverterFactory.create())
                 .build();
 
-        TextRequest textRequest = retrofit.create(TextRequest.class);
-        Call<String> call = textRequest.getResponse(req);
+        IncubatorRequest incubatorRequest = retrofit.create(IncubatorRequest.class);
+        Call<String> call = incubatorRequest.getResponse(req);
         call.timeout().deadline(REQ_TIMEOUT, TimeUnit.MILLISECONDS);
         call.enqueue(new Callback<String>() {
             @Override
             public void onResponse(@NonNull Call<String> call, @NonNull Response<String> response) {
+                Log.i(LOG_TAG, req);
                 String[] strList = response.body().replace("\r\n", "\n").split("\n");
                 if (req.startsWith("request_state")) {
                     oldChamber = state.chamber;
@@ -301,16 +302,17 @@ public class IncubatorStateActivity extends AppCompatActivity {
                     else
                         hOverheat.sendEmptyMessage(NO_ERROR);
 
-                    if (state.isChanged)
-                        hConfig.sendEmptyMessage(CONFIG_AVAILABLE);
                     if (!state.power)
                         hIncubator.sendEmptyMessage(INCUBATOR_TURNED_OFF);
                     else
                         hIncubator.sendEmptyMessage(INCUBATOR_ACCESSIBLE);
                 } else if (req.startsWith("request_config")) {
-                    cfg = IncubatorConfig.deserialize(strList);
-                    updateScreenText();
-                    needConfig = false;
+                    IncubatorConfig newCfg = IncubatorConfig.deserialize(strList);
+                    if (newCfg.isCorrect) {
+                        cfg = newCfg;
+                        updateScreenText();
+                        needConfig = false;
+                    }
                 }
                 state.timestamp = new Date().getTime();
                 writeToArchive();
@@ -505,6 +507,14 @@ public class IncubatorStateActivity extends AppCompatActivity {
     }
 
     void sendConfig() {
+        if (Float.isNaN(cfg.neededTemperature))
+            cfg.isCorrect = false;
+        if (Float.isNaN(cfg.neededHumidity))
+            cfg.isCorrect = false;
+
+        if (!cfg.isCorrect)
+            return;
+
         makeRequest(
                 String.format(Locale.US,
                         "needed_temp %.2f\r\n",
@@ -562,6 +572,7 @@ public class IncubatorStateActivity extends AppCompatActivity {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
     }
 
+    @SuppressLint("ClickableViewAccessibility")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -614,6 +625,7 @@ public class IncubatorStateActivity extends AppCompatActivity {
             public boolean handleMessage(@NonNull Message msg) {
                 switch (msg.what) {
                     case INCUBATOR_INACCESSIBLE:
+                        Log.i(LOG_TAG, "INCUBATOR_INACCESIBLE");
                         state.power = true;
                         state.internet = false;
                         needConfig = true;
@@ -623,6 +635,7 @@ public class IncubatorStateActivity extends AppCompatActivity {
 
                         break;
                     case INCUBATOR_ACCESSIBLE:
+                        Log.i(LOG_TAG, "INCUBATOR_ACCESSIBLE");
                         if (needConfig)
                             hConfig.sendEmptyMessage(CONFIG_AVAILABLE);
                         state.power = true;
@@ -631,6 +644,7 @@ public class IncubatorStateActivity extends AppCompatActivity {
                         updateIncubator();
                         break;
                     case INCUBATOR_TURNED_OFF:
+                        Log.i(LOG_TAG, "INCUBATOR_TURNED_OFF");
                         mode = CURRENT_STATE_MODE;
 
                         updateIncubator();
@@ -648,6 +662,7 @@ public class IncubatorStateActivity extends AppCompatActivity {
             @Override
             public boolean handleMessage(@NonNull Message msg) {
                 if (msg.what == CONFIG_AVAILABLE) {
+                    Log.i(LOG_TAG, "CONFIG_AVAILABLE");
                     requestConfig();
                 }
 
@@ -660,6 +675,7 @@ public class IncubatorStateActivity extends AppCompatActivity {
             @Override
             public boolean handleMessage(@NonNull Message msg) {
                 if (msg.what == OVERHEAT_ERROR) {
+                    Log.i(LOG_TAG, "OVERHEAT_ERROR");
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                         NotificationChannel channel = new NotificationChannel(
                                 "IncubatorOverheatError",
@@ -1059,7 +1075,6 @@ public class IncubatorStateActivity extends AppCompatActivity {
     @Override
     protected void onStart() {
         super.onStart();
-        requestConfig();
         requestState();
     }
 

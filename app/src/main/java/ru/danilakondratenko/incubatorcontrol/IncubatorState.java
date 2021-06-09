@@ -80,26 +80,33 @@ public class IncubatorState {
         result.power = true;
         for (String x : strs) {
             String[] args = x.trim().split(" ");
-            if (args[0].compareTo("current_temp") == 0)
-                result.currentTemperature = Float.parseFloat(args[1]);
-            else if (args[0].compareTo("current_humid") == 0)
-                result.currentHumidity = Float.parseFloat(args[1]);
-            else if (args[0].compareTo("heater") == 0)
+            if (args[0].compareTo("current_temp") == 0) {
+                if (args[1].compareToIgnoreCase("nan") != 0)
+                    result.currentTemperature = Float.parseFloat(args[1]);
+                else
+                    result.currentTemperature = NO_DATA_FLOAT;
+            } else if (args[0].compareTo("current_humid") == 0) {
+                if (args[1].compareToIgnoreCase("nan") != 0)
+                    result.currentHumidity = Float.parseFloat(args[1]);
+                else
+                    result.currentHumidity = NO_DATA_FLOAT;
+            } else if (args[0].compareTo("heater") == 0) {
                 result.heater = (Integer.parseInt(args[1]) > 0);
-            else if (args[0].compareTo("cooler") == 0)
+            } else if (args[0].compareTo("cooler") == 0) {
                 result.cooler = (Integer.parseInt(args[1]) > 0);
-            else if (args[0].compareTo("wetter") == 0)
+            } else if (args[0].compareTo("wetter") == 0) {
                 result.wetter = (Integer.parseInt(args[1]) > 0);
-            else if (args[0].compareTo("chamber") == 0)
+            } else if (args[0].compareTo("chamber") == 0) {
                 result.chamber = Integer.parseInt(args[1]);
-            else if (args[0].compareTo("uptime") == 0)
+            } else if (args[0].compareTo("uptime") == 0) {
                 result.uptime = Long.parseLong(args[1]);
-            else if (args[0].compareTo("overheat") == 0)
+            } else if (args[0].compareTo("overheat") == 0) {
                 result.overheat = true;
-            else if (args[0].compareTo("turned_off") == 0)
-                result.power = false;
-            else if (args[0].compareTo("changed") == 0)
+            }else if(args[0].compareTo("turned_off") == 0) {
+                result.power =false;
+            } else if (args[0].compareTo("changed") == 0) {
                 result.isChanged = true;
+            }
         }
         return result;
     }

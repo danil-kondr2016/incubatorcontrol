@@ -9,12 +9,15 @@ public class IncubatorConfig {
     public float neededTemperature, neededHumidity;
     public int rotationsPerDay, numberOfPrograms, currentProgram;
 
+    public boolean isCorrect;
+
     IncubatorConfig() {
         this.neededTemperature = NO_DATA_FLOAT;
         this.neededHumidity = NO_DATA_FLOAT;
         this.rotationsPerDay = NO_DATA_INT;
         this.numberOfPrograms = NO_DATA_INT;
         this.currentProgram = NO_DATA_INT;
+        this.isCorrect = true;
     }
 
     public void clear() {
@@ -23,6 +26,7 @@ public class IncubatorConfig {
         this.rotationsPerDay = NO_DATA_INT;
         this.numberOfPrograms = NO_DATA_INT;
         this.currentProgram = NO_DATA_INT;
+        this.isCorrect = true;
     }
 
     public String[] serialize() {
@@ -53,17 +57,29 @@ public class IncubatorConfig {
 
         for (String x : strs) {
             String[] args = x.trim().split(" ");
-            if (args[0].compareTo("needed_temp") == 0)
-                result.neededTemperature = Float.parseFloat(args[1]);
-            else if (args[0].compareTo("needed_humid") == 0)
-                result.neededHumidity = Float.parseFloat(args[1]);
-            else if (args[0].compareTo("rotations_per_day") == 0)
+            if (args[0].compareTo("needed_temp") == 0) {
+                if (args[1].compareToIgnoreCase("nan") != 0)
+                    result.neededTemperature = Float.parseFloat(args[1]);
+                else
+                    result.neededTemperature = NO_DATA_FLOAT;
+            } else if (args[0].compareTo("needed_humid") == 0) {
+                if (args[1].compareToIgnoreCase("nan") != 0)
+                    result.neededHumidity = Float.parseFloat(args[1]);
+                else
+                    result.neededHumidity = NO_DATA_FLOAT;
+            } else if (args[0].compareTo("rotations_per_day") == 0) {
                 result.rotationsPerDay = Integer.parseInt(args[1]);
-            else if (args[0].compareTo("number_of_programs") == 0)
+            } else if (args[0].compareTo("number_of_programs") == 0) {
                 result.numberOfPrograms = Integer.parseInt(args[1]);
-            else if (args[0].compareTo("current_program") == 0)
+            } else if (args[0].compareTo("current_program") == 0) {
                 result.currentProgram = Integer.parseInt(args[1]);
+            }
         }
+
+        if (Float.isNaN(result.neededTemperature))
+            result.isCorrect = false;
+        if (Float.isNaN(result.neededHumidity))
+            result.isCorrect = false;
 
         return result;
     }
