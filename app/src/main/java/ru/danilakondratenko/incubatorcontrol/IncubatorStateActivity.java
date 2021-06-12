@@ -293,27 +293,26 @@ public class IncubatorStateActivity extends AppCompatActivity {
             public void onResponse(@NonNull Call<String> call, @NonNull Response<String> response) {
                 Log.i(LOG_TAG, req);
                 String[] strList = response.body().replace("\r\n", "\n").split("\n");
-                if (req.startsWith("request_state")) {
-                    oldChamber = state.chamber;
-                    state = IncubatorState.deserialize(strList);
 
-                    if (state.overheat)
-                        hOverheat.sendEmptyMessage(OVERHEAT_ERROR);
-                    else
-                        hOverheat.sendEmptyMessage(NO_ERROR);
+                oldChamber = state.chamber;
+                state = IncubatorState.deserialize(strList);
+                if (state.overheat)
+                    hOverheat.sendEmptyMessage(OVERHEAT_ERROR);
+                else
+                    hOverheat.sendEmptyMessage(NO_ERROR);
 
-                    if (!state.power)
-                        hIncubator.sendEmptyMessage(INCUBATOR_TURNED_OFF);
-                    else
-                        hIncubator.sendEmptyMessage(INCUBATOR_ACCESSIBLE);
-                } else if (req.startsWith("request_config")) {
-                    IncubatorConfig newCfg = IncubatorConfig.deserialize(strList);
-                    if (newCfg.isCorrect) {
-                        cfg = newCfg;
-                        updateScreenText();
-                        needConfig = false;
-                    }
+                if (!state.power)
+                    hIncubator.sendEmptyMessage(INCUBATOR_TURNED_OFF);
+                else
+                    hIncubator.sendEmptyMessage(INCUBATOR_ACCESSIBLE);
+
+                IncubatorConfig newCfg = IncubatorConfig.deserialize(strList);
+                if (newCfg.isCorrect) {
+                    cfg = newCfg;
+                    updateScreenText();
+                    needConfig = false;
                 }
+
                 state.timestamp = new Date().getTime();
                 writeToArchive();
             }
