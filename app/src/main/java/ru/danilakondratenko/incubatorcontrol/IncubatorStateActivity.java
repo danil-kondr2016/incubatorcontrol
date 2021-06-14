@@ -294,23 +294,25 @@ public class IncubatorStateActivity extends AppCompatActivity {
                 Log.i(LOG_TAG, req);
                 String[] strList = response.body().replace("\r\n", "\n").split("\n");
 
-                oldChamber = state.chamber;
-                state = IncubatorState.deserialize(strList);
-                if (state.overheat)
-                    hOverheat.sendEmptyMessage(OVERHEAT_ERROR);
-                else
-                    hOverheat.sendEmptyMessage(NO_ERROR);
+                if (req.startsWith("request_state\r\n")) {
+                    oldChamber = state.chamber;
+                    state = IncubatorState.deserialize(strList);
+                    if (state.overheat)
+                        hOverheat.sendEmptyMessage(OVERHEAT_ERROR);
+                    else
+                        hOverheat.sendEmptyMessage(NO_ERROR);
 
-                if (!state.power)
-                    hIncubator.sendEmptyMessage(INCUBATOR_TURNED_OFF);
-                else
-                    hIncubator.sendEmptyMessage(INCUBATOR_ACCESSIBLE);
-
-                IncubatorConfig newCfg = IncubatorConfig.deserialize(strList);
-                if (newCfg.isCorrect) {
-                    cfg = newCfg;
-                    updateScreenText();
-                    needConfig = false;
+                    if (!state.power)
+                        hIncubator.sendEmptyMessage(INCUBATOR_TURNED_OFF);
+                    else
+                        hIncubator.sendEmptyMessage(INCUBATOR_ACCESSIBLE);
+                } else if (req.startsWith("request_config\r\n")) {
+                    IncubatorConfig newCfg = IncubatorConfig.deserialize(strList);
+                    if (newCfg.isCorrect) {
+                        cfg = newCfg;
+                        updateScreenText();
+                        needConfig = false;
+                    }
                 }
 
                 state.timestamp = new Date().getTime();
