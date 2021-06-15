@@ -4,8 +4,6 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.preference.PreferenceManager;
 
 import android.content.SharedPreferences;
-import android.database.Cursor;
-import android.database.sqlite.SQLiteDatabase;
 import android.graphics.Color;
 import android.graphics.DashPathEffect;
 import android.graphics.Paint;
@@ -31,6 +29,12 @@ import java.nio.ByteBuffer;
 import java.text.DateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
+
+import retrofit2.Call;
+import retrofit2.Callback;
+import retrofit2.Response;
+import retrofit2.Retrofit;
+import retrofit2.converter.gson.GsonConverterFactory;
 
 public class ArchiveActivity extends AppCompatActivity {
     private static final int RECORD_SIZE = 16;
@@ -115,6 +119,9 @@ public class ArchiveActivity extends AppCompatActivity {
 
     private static final String LOG_TAG = "Archive";
 
+    public static final String DEFAULT_INCUBATOR_ADDRESS = "incubator.local";
+    public static final String ARCHIVE_ADDRESS = "185.26.121.126";
+
     Spinner spTimespan;
 
     GraphView gvTempGraph;
@@ -132,8 +139,42 @@ public class ArchiveActivity extends AppCompatActivity {
 
     Handler hGraph;
     Runnable rGraphUpdate;
-    
-    void scanRecords(int timespan_type) {
+
+    SharedPreferences prefs;
+    SharedPreferences.OnSharedPreferenceChangeListener prefsListener;
+
+    String incubatorAddress = DEFAULT_INCUBATOR_ADDRESS;
+    private boolean cloudArchiveMode = false;
+
+    private long timespanBegin(int timespan_type) {
+        long result = 0;
+        Calendar calendar = Calendar.getInstance();
+
+        switch (timespan_type) {
+            case TIMESPAN_LAST_HOUR:
+                result = calendar.getTimeInMillis() - HOUR;
+                break;
+            case TIMESPAN_LAST_DAY:
+                result = calendar.getTimeInMillis() - DAY;
+                break;
+            case TIMESPAN_LAST_WEEK:
+                result = calendar.getTimeInMillis() - WEEK;
+                break;
+            case TIMESPAN_LAST_MONTH:
+                result = calendar.getTimeInMillis() - MONTH;
+                break;
+            case TIMESPAN_LAST_YEAR:
+                result = calendar.getTimeInMillis() - YEAR;
+                break;
+            case TIMESPAN_CURRENT:
+                result = calendar.getTimeInMillis() - MINUTE;
+                break;
+        }
+
+        return result;
+    }
+
+    void scanRecords_local(int timespan_type) {
         try {
             File archive = new File(
                     Environment.getExternalStorageDirectory(),
@@ -163,29 +204,8 @@ public class ArchiveActivity extends AppCompatActivity {
             boolean heater = false;
             boolean wetter = false;
 
-            long timespan_begin = 0;
-            Calendar calendar = Calendar.getInstance();
-            
-            switch (timespan_type) {
-                case TIMESPAN_LAST_HOUR:
-                    timespan_begin = calendar.getTimeInMillis() - HOUR;
-                    break;
-                case TIMESPAN_LAST_DAY:
-                    timespan_begin = calendar.getTimeInMillis() - DAY;
-                    break;
-                case TIMESPAN_LAST_WEEK:
-                    timespan_begin = calendar.getTimeInMillis() - WEEK;
-                    break;
-                case TIMESPAN_LAST_MONTH:
-                    timespan_begin = calendar.getTimeInMillis() - MONTH;
-                    break;
-                case TIMESPAN_LAST_YEAR:
-                    timespan_begin = calendar.getTimeInMillis() - YEAR;
-                    break;
-                case TIMESPAN_CURRENT:
-                    timespan_begin = calendar.getTimeInMillis() - MINUTE;
-                    break;
-            }
+            long timespan_begin = timespanBegin(timespan_type);
+
             while (istream.read(buf) != -1) {
                 time = ByteBuffer.wrap(buf, TIMESTAMP, TIMESTAMP_LEN).getLong();
 
@@ -203,7 +223,7 @@ public class ArchiveActivity extends AppCompatActivity {
 
                 current_temp = ByteBuffer.wrap(buf, CUR_TEMP, CUR_TEMP_LEN).getShort() / 256.0;
                 current_humid = ByteBuffer.wrap(buf, CUR_HUMID, CUR_HUMID_LEN).getShort() / 256.0;
-                needed_temp = ((double)buf[NEEDED_TEMP] + 360) / 10.0;
+                needed_temp = ((double) buf[NEEDED_TEMP] + 360) / 10.0;
                 needed_humid = buf[NEEDED_HUMID];
 
                 heater = (buf[ST] & ST_HEATER) == ST_HEATER;
@@ -225,7 +245,7 @@ public class ArchiveActivity extends AppCompatActivity {
                         chamber = IncubatorState.CHAMBER_ERROR;
                         break;
                     case ST_CHAMBER_UNDEF:
-                        chamber = old_chamber;
+                        chamber = IncubatorState.CHAMBER_RIGHT;
                         break;
                     default:
                         chamber = IncubatorState.CHAMBER_ERROR;
@@ -241,7 +261,6 @@ public class ArchiveActivity extends AppCompatActivity {
                 wetterStates.add(new DataPoint(time, (wetter) ? WETTER_ON : WETTER_OFF));
                 chamberStates.add(new DataPoint(time, CHAMBER_NEUTRAL - chamber));
             }
-
 
             DataPoint[] c_temps = new DataPoint[currentTemps.size()];
             DataPoint[] n_temps = new DataPoint[neededTemps.size()];
@@ -290,10 +309,128 @@ public class ArchiveActivity extends AppCompatActivity {
         }
     }
 
+    void scanRecords_cloud(int timespan_type) {
+        Retrofit retrofit = new Retrofit.Builder()
+                .baseUrl("http://" + ARCHIVE_ADDRESS)
+                .addConverterFactory(GsonConverterFactory.create())
+                .build();
+        ArchiveRequest archiveRequest = retrofit.create(ArchiveRequest.class);
+        Call<ArchiveRecord[]> call = archiveRequest.getArchive(timespanBegin(timespan_type));
+        call.enqueue(new Callback<ArchiveRecord[]>() {
+            @Override
+            public void onResponse(Call<ArchiveRecord[]> call, Response<ArchiveRecord[]> response) {
+                ArrayList<DataPoint> currentTemps = new ArrayList<>();
+                ArrayList<DataPoint> neededTemps = new ArrayList<>();
+                ArrayList<DataPoint> currentHumids = new ArrayList<>();
+                ArrayList<DataPoint> neededHumids = new ArrayList<>();
+                ArrayList<DataPoint> heaterStates = new ArrayList<>();
+                ArrayList<DataPoint> wetterStates = new ArrayList<>();
+                ArrayList<DataPoint> chamberStates = new ArrayList<>();
+
+                long min_time = Long.MAX_VALUE;
+                long max_time = Long.MIN_VALUE;
+
+                for (ArchiveRecord record : response.body()) {
+                    if (record.timestamp <= min_time)
+                        min_time = record.timestamp;
+
+                    if (record.timestamp >= max_time)
+                        max_time = record.timestamp;
+
+                    int chamber = record.chamber;
+                    if (chamber == IncubatorState.CHAMBER_UNDEF)
+                        chamber = IncubatorState.CHAMBER_RIGHT;
+                    currentTemps.add(new DataPoint(record.timestamp, record.currentTemperature));
+                    currentHumids.add(new DataPoint(record.timestamp, record.currentHumidity));
+                    neededTemps.add(new DataPoint(record.timestamp, record.neededTemperature));
+                    neededHumids.add(new DataPoint(record.timestamp, record.neededHumidity));
+                    heaterStates.add(new DataPoint(record.timestamp,
+                            record.heater + HEATER_OFF));
+                    wetterStates.add(new DataPoint(record.timestamp,
+                            record.wetter + WETTER_OFF));
+                    chamberStates.add(new DataPoint(record.timestamp, CHAMBER_NEUTRAL + chamber));
+                }
+
+                DataPoint[] c_temps = new DataPoint[currentTemps.size()];
+                DataPoint[] n_temps = new DataPoint[neededTemps.size()];
+                DataPoint[] c_humids = new DataPoint[currentHumids.size()];
+                DataPoint[] n_humids = new DataPoint[neededHumids.size()];
+                DataPoint[] heaters = new DataPoint[heaterStates.size()];
+                DataPoint[] wetters = new DataPoint[wetterStates.size()];
+                DataPoint[] chambers = new DataPoint[chamberStates.size()];
+
+                currentTemps.toArray(c_temps);
+                neededTemps.toArray(n_temps);
+                currentHumids.toArray(c_humids);
+                neededHumids.toArray(n_humids);
+                heaterStates.toArray(heaters);
+                wetterStates.toArray(wetters);
+                chamberStates.toArray(chambers);
+
+                temperatureSeries.resetData(c_temps);
+                neededTempSeries.resetData(n_temps);
+                humiditySeries.resetData(c_humids);
+                neededHumidSeries.resetData(n_humids);
+                heaterSeries.resetData(heaters);
+                wetterSeries.resetData(wetters);
+                chamberSeries.resetData(chambers);
+
+                gvTempGraph.getViewport().setXAxisBoundsManual(true);
+                gvTempGraph.getViewport().setMinX(min_time);
+                gvTempGraph.getViewport().setMaxX(max_time);
+                gvTempGraph.getGridLabelRenderer().setNumHorizontalLabels(NUM_HORIZONTAL);
+                gvTempGraph.getGridLabelRenderer().setNumVerticalLabels(NUM_VERTICAL);
+
+                gvHumidGraph.getViewport().setXAxisBoundsManual(true);
+                gvHumidGraph.getViewport().setMinX(min_time);
+                gvHumidGraph.getViewport().setMaxX(max_time);
+                gvHumidGraph.getGridLabelRenderer().setNumHorizontalLabels(NUM_HORIZONTAL);
+                gvHumidGraph.getGridLabelRenderer().setNumVerticalLabels(NUM_VERTICAL);
+
+                gvChamberGraph.getViewport().setXAxisBoundsManual(true);
+                gvChamberGraph.getViewport().setMinX(min_time);
+                gvChamberGraph.getViewport().setMaxX(max_time);
+                gvChamberGraph.getGridLabelRenderer().setNumHorizontalLabels(NUM_HORIZONTAL);
+                gvChamberGraph.getGridLabelRenderer().setNumVerticalLabels(NUM_VERTICAL);
+            }
+
+            @Override
+            public void onFailure(Call<ArchiveRecord[]> call, Throwable t) {
+
+            }
+        });
+    }
+
+    void scanRecords(int timespan_type) {
+        if (cloudArchiveMode) {
+            scanRecords_cloud(timespan_type);
+        } else {
+            scanRecords_local(timespan_type);
+        }
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_archive);
+
+        prefs = PreferenceManager.getDefaultSharedPreferences(this);
+        incubatorAddress = prefs.getString("incubator_address", DEFAULT_INCUBATOR_ADDRESS);
+        cloudArchiveMode = prefs.getBoolean("cloud_archive_mode", true);
+        prefsListener = new SharedPreferences.OnSharedPreferenceChangeListener() {
+            @Override
+            public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
+                Log.i(LOG_TAG, "sharedPreferenceChanged@" + key);
+                if (key.compareTo("incubator_address") == 0) {
+                    incubatorAddress = sharedPreferences.getString(
+                            key, DEFAULT_INCUBATOR_ADDRESS
+                    );
+                } else if (key.compareTo("cloud_archive_mode") == 0) {
+                    cloudArchiveMode = sharedPreferences.getBoolean("cloud_archive_mode", true);
+                }
+            }
+        };
+        prefs.registerOnSharedPreferenceChangeListener(prefsListener);
 
         ArrayAdapter<CharSequence> adapter =
                 ArrayAdapter.createFromResource(
@@ -309,7 +446,7 @@ public class ArchiveActivity extends AppCompatActivity {
                     hGraph.removeCallbacks(rGraphUpdate);
 
                 } else {
-                    hGraph.postDelayed(rGraphUpdate, 2000);
+                    hGraph.postDelayed(rGraphUpdate, IncubatorStateActivity.REQ_TIMEOUT);
                 }
                 scanRecords(position);
             }
@@ -408,7 +545,7 @@ public class ArchiveActivity extends AppCompatActivity {
             @Override
             public void run() {
                 scanRecords(TIMESPAN_CURRENT);
-                hGraph.postDelayed(this, 2000);
+                hGraph.postDelayed(this, IncubatorStateActivity.REQ_TIMEOUT);
             }
         };
     }

@@ -10,4 +10,8 @@
         android:defaultValue="false"
         android:key="manual_rotation_mode"
         android:title="@string/manual_rotation_mode" />
+    <SwitchPreference
+        android:defaultValue="true"
+        android:key="cloud_archive_mode"
+        android:title="@string/cloud_archive_mode" />
 </PreferenceScreen>

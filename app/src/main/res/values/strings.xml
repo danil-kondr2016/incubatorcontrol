@@ -21,4 +21,5 @@
     <string name="wetter_state">Wetter state</string>
     <string name="chamber_pos">Incubation chamber position</string>
     <string name="manual_rotation_mode">Chamber manual rotation mode</string>
+    <string name="cloud_archive_mode">Cloud archive mode</string>
 </resources>
