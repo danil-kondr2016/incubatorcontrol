@@ -35,6 +35,7 @@ import retrofit2.Callback;
 import retrofit2.Response;
 import retrofit2.Retrofit;
 import retrofit2.converter.gson.GsonConverterFactory;
+import retrofit2.converter.scalars.ScalarsConverterFactory;
 
 public class ArchiveActivity extends AppCompatActivity {
     private static final int RECORD_SIZE = 16;
@@ -121,6 +122,7 @@ public class ArchiveActivity extends AppCompatActivity {
 
     public static final String DEFAULT_INCUBATOR_ADDRESS = "incubator.local";
     public static final String ARCHIVE_ADDRESS = "185.26.121.126";
+    public static final String DEFAULT_ARCHIVE_ADDRESS = "185.26.121.126";
 
     Spinner spTimespan;
 
@@ -144,7 +146,29 @@ public class ArchiveActivity extends AppCompatActivity {
     SharedPreferences.OnSharedPreferenceChangeListener prefsListener;
 
     String incubatorAddress = DEFAULT_INCUBATOR_ADDRESS;
+    String archiveAddress = DEFAULT_ARCHIVE_ADDRESS;
     private boolean cloudArchiveMode = false;
+
+    private void requestArchiveAddress() {
+        Retrofit retrofit = new Retrofit.Builder()
+                .baseUrl("http://" + incubatorAddress)
+                .addConverterFactory(ScalarsConverterFactory.create())
+                .build();
+        IncubatorRequest request = retrofit.create(IncubatorRequest.class);
+        Call<String> call = request.getArchiveAddress();
+        call.enqueue(new Callback<String>() {
+
+            @Override
+            public void onResponse(Call<String> call, Response<String> response) {
+                archiveAddress = response.body().trim();
+            }
+
+            @Override
+            public void onFailure(Call<String> call, Throwable t) {
+
+            }
+        });
+    }
 
     private long timespanBegin(int timespan_type) {
         long result = 0;
@@ -425,12 +449,15 @@ public class ArchiveActivity extends AppCompatActivity {
                     incubatorAddress = sharedPreferences.getString(
                             key, DEFAULT_INCUBATOR_ADDRESS
                     );
+                    requestArchiveAddress();
                 } else if (key.compareTo("cloud_archive_mode") == 0) {
                     cloudArchiveMode = sharedPreferences.getBoolean("cloud_archive_mode", true);
                 }
             }
         };
         prefs.registerOnSharedPreferenceChangeListener(prefsListener);
+
+        requestArchiveAddress();
 
         ArrayAdapter<CharSequence> adapter =
                 ArrayAdapter.createFromResource(
