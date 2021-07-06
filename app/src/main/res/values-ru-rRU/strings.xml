@@ -6,8 +6,8 @@
     <string name="settings">Настройки</string>
     <string name="title_activity_incubator_settings">Настройки</string>
     <string name="incubator_address">Адрес инкубатора</string>
-    <string name="temperature">Температура</string>
-    <string name="humidity">Влажность</string>
+    <string name="current_temperature">Текущая температура</string>
+    <string name="current_humidity">Текущая влажность</string>
     <string-array name="timespan_list">
         <item>в данный момент</item>
         <item>за последний час</item>
@@ -22,4 +22,6 @@
     <string name="chamber_pos">Положение инкубационной камеры</string>
     <string name="manual_rotation_mode">Режим ручного поворота инкубационной камеры</string>
     <string name="cloud_archive_mode">Режим облачного архива</string>
+    <string name="needed_temperature">Необходимая температура</string>
+    <string name="needed_humidity">Необходимая влажность</string>
 </resources>

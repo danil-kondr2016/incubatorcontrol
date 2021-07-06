@@ -121,17 +121,16 @@ public class ArchiveActivity extends AppCompatActivity {
     private static final String LOG_TAG = "Archive";
 
     public static final String DEFAULT_INCUBATOR_ADDRESS = "incubator.local";
-    public static final String ARCHIVE_ADDRESS = "185.26.121.126";
     public static final String DEFAULT_ARCHIVE_ADDRESS = "185.26.121.126";
 
     Spinner spTimespan;
 
     GraphView gvTempGraph;
-    LineGraphSeries<DataPoint> temperatureSeries;
+    LineGraphSeries<DataPoint> currentTempSeries;
     LineGraphSeries<DataPoint> neededTempSeries;
 
     GraphView gvHumidGraph;
-    LineGraphSeries<DataPoint> humiditySeries;
+    LineGraphSeries<DataPoint> currentHumidSeries;
     LineGraphSeries<DataPoint> neededHumidSeries;
 
     GraphView gvChamberGraph;
@@ -302,9 +301,9 @@ public class ArchiveActivity extends AppCompatActivity {
             wetterStates.toArray(wetters);
             chamberStates.toArray(chambers);
 
-            temperatureSeries.resetData(c_temps);
+            currentTempSeries.resetData(c_temps);
             neededTempSeries.resetData(n_temps);
-            humiditySeries.resetData(c_humids);
+            currentHumidSeries.resetData(c_humids);
             neededHumidSeries.resetData(n_humids);
             heaterSeries.resetData(heaters);
             wetterSeries.resetData(wetters);
@@ -335,7 +334,7 @@ public class ArchiveActivity extends AppCompatActivity {
 
     void scanRecords_cloud(int timespan_type) {
         Retrofit retrofit = new Retrofit.Builder()
-                .baseUrl("http://" + ARCHIVE_ADDRESS)
+                .baseUrl("http://" + archiveAddress)
                 .addConverterFactory(GsonConverterFactory.create())
                 .build();
         ArchiveRequest archiveRequest = retrofit.create(ArchiveRequest.class);
@@ -391,9 +390,9 @@ public class ArchiveActivity extends AppCompatActivity {
                 wetterStates.toArray(wetters);
                 chamberStates.toArray(chambers);
 
-                temperatureSeries.resetData(c_temps);
+                currentTempSeries.resetData(c_temps);
                 neededTempSeries.resetData(n_temps);
-                humiditySeries.resetData(c_humids);
+                currentHumidSeries.resetData(c_humids);
                 neededHumidSeries.resetData(n_humids);
                 heaterSeries.resetData(heaters);
                 wetterSeries.resetData(wetters);
@@ -484,18 +483,6 @@ public class ArchiveActivity extends AppCompatActivity {
             }
         });
 
-        Paint ntPaint = new Paint();
-        ntPaint.setColor(Color.BLUE);
-        ntPaint.setStyle(Paint.Style.STROKE);
-        ntPaint.setStrokeWidth(PAINT_STROKE_WIDTH);
-        ntPaint.setPathEffect(new DashPathEffect(new float[]{PAINT_DASH_LENGTH, PAINT_DASH_LENGTH}, 0));
-
-        Paint nhPaint = new Paint();
-        nhPaint.setColor(Color.GREEN);
-        nhPaint.setStyle(Paint.Style.STROKE);
-        nhPaint.setStrokeWidth(PAINT_STROKE_WIDTH);
-        nhPaint.setPathEffect(new DashPathEffect(new float[]{PAINT_DASH_LENGTH, PAINT_DASH_LENGTH}, 0));
-
         gvTempGraph = findViewById(R.id.tempGraph);
         gvTempGraph.getViewport().setScalable(true);
         gvTempGraph.getGridLabelRenderer().setHumanRounding(false);
@@ -508,13 +495,14 @@ public class ArchiveActivity extends AppCompatActivity {
         gvTempGraph.getSecondScale().setMinY(HEATER_OFF);
         gvTempGraph.getSecondScale().setMaxY(HEATER_ON);
 
-        temperatureSeries = new LineGraphSeries<>();
-        temperatureSeries.setColor(Color.BLUE);
-        temperatureSeries.setTitle(getString(R.string.temperature));
-        gvTempGraph.addSeries(temperatureSeries);
+        currentTempSeries = new LineGraphSeries<>();
+        currentTempSeries.setColor(Color.BLUE);
+        currentTempSeries.setTitle(getString(R.string.current_temperature));
+        gvTempGraph.addSeries(currentTempSeries);
 
         neededTempSeries = new LineGraphSeries<>();
-        neededTempSeries.setCustomPaint(ntPaint);
+        neededTempSeries.setColor(Color.argb(255, 0, 0, 127));
+        neededTempSeries.setTitle(getString(R.string.needed_temperature));
         gvTempGraph.addSeries(neededTempSeries);
 
         heaterSeries = new LineGraphSeries<>();
@@ -534,13 +522,14 @@ public class ArchiveActivity extends AppCompatActivity {
         gvHumidGraph.getSecondScale().setMinY(WETTER_OFF);
         gvHumidGraph.getSecondScale().setMaxY(WETTER_ON);
 
-        humiditySeries = new LineGraphSeries<>();
-        humiditySeries.setColor(Color.GREEN);
-        humiditySeries.setTitle(getString(R.string.humidity));
-        gvHumidGraph.addSeries(humiditySeries);
+        currentHumidSeries = new LineGraphSeries<>();
+        currentHumidSeries.setColor(Color.GREEN);
+        currentHumidSeries.setTitle(getString(R.string.current_humidity));
+        gvHumidGraph.addSeries(currentHumidSeries);
 
         neededHumidSeries = new LineGraphSeries<>();
-        neededHumidSeries.setCustomPaint(nhPaint);
+        neededHumidSeries.setColor(Color.argb(255, 0, 127, 0));
+        neededHumidSeries.setTitle(getString(R.string.needed_humidity));
         gvHumidGraph.addSeries(neededHumidSeries);
 
         wetterSeries = new LineGraphSeries<>();

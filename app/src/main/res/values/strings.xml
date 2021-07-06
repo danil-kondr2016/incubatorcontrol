@@ -6,8 +6,8 @@
     <string name="settings">Settings</string>
     <string name="title_activity_incubator_settings">Settings</string>
     <string name="incubator_address">Incubator address</string>
-    <string name="temperature">Temperature</string>
-    <string name="humidity">Humidity</string>
+    <string name="current_temperature">Current temperature</string>
+    <string name="current_humidity">Current humidity</string>
     <string name="view_history_for">View history for</string>
     <string-array name="timespan_list">
         <item>Current state</item>
@@ -22,4 +22,6 @@
     <string name="chamber_pos">Incubation chamber position</string>
     <string name="manual_rotation_mode">Chamber manual rotation mode</string>
     <string name="cloud_archive_mode">Cloud archive mode</string>
+    <string name="needed_temperature">Needed temperature</string>
+    <string name="needed_humidity">Needed humidity</string>
 </resources>
