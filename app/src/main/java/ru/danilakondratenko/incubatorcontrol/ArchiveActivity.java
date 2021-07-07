@@ -5,10 +5,7 @@ import androidx.preference.PreferenceManager;
 
 import android.content.SharedPreferences;
 import android.graphics.Color;
-import android.graphics.DashPathEffect;
-import android.graphics.Paint;
 import android.os.Bundle;
-import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
@@ -18,18 +15,15 @@ import android.widget.ArrayAdapter;
 import android.widget.Spinner;
 
 import com.jjoe64.graphview.GraphView;
-import com.jjoe64.graphview.GridLabelRenderer;
 import com.jjoe64.graphview.LegendRenderer;
 import com.jjoe64.graphview.helper.DateAsXAxisLabelFormatter;
 import com.jjoe64.graphview.series.DataPoint;
 import com.jjoe64.graphview.series.LineGraphSeries;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.nio.ByteBuffer;
 import java.text.DateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
+import java.util.concurrent.TimeUnit;
 
 import retrofit2.Call;
 import retrofit2.Callback;
@@ -59,14 +53,18 @@ public class ArchiveActivity extends AppCompatActivity {
 
     /* Archive state position */
 
-    public static final double WETTER_OFF  = 0;
-    public static final double WETTER_ON   = WETTER_OFF + 1;
-    public static final double HEATER_OFF  = 0;
-    public static final double HEATER_ON   = HEATER_OFF + 1;
+    public static final double WETTER_HEIGHT = 1;
+    public static final double WETTER_OFF    = 0;
+    public static final double WETTER_ON     = WETTER_OFF + WETTER_HEIGHT;
 
+    public static final double HEATER_HEIGHT = 1;
+    public static final double HEATER_OFF    = 0;
+    public static final double HEATER_ON     = HEATER_OFF + HEATER_HEIGHT;
+
+    public static final double CHAMBER_HEIGHT  = 1;
     public static final double CHAMBER_NEUTRAL = 0;
-    public static final double CHAMBER_LEFT    = CHAMBER_NEUTRAL - 1;
-    public static final double CHAMBER_RIGHT   = CHAMBER_NEUTRAL + 1;
+    public static final double CHAMBER_LEFT    = CHAMBER_NEUTRAL - CHAMBER_HEIGHT;
+    public static final double CHAMBER_RIGHT   = CHAMBER_NEUTRAL + CHAMBER_HEIGHT;
 
     /* GraphView label parameters */
 
@@ -104,6 +102,21 @@ public class ArchiveActivity extends AppCompatActivity {
     String incubatorAddress = DEFAULT_INCUBATOR_ADDRESS;
     String archiveAddress = DEFAULT_ARCHIVE_ADDRESS;
     private boolean cloudArchiveMode = false;
+
+    float clearFloat(float x) {
+        short xa = (short)(x * 256);
+        return xa / 256.0f;
+    }
+
+    long roundTimeFloor(long x) {
+        long milliseconds = x % 1000L;
+        return x - milliseconds;
+    }
+
+    long roundTimeCeiling(long x) {
+        long milliseconds = x % 1000L;
+        return x + (1000L - milliseconds);
+    }
 
     private void requestArchiveAddress() {
         Retrofit retrofit = new Retrofit.Builder()
@@ -160,6 +173,7 @@ public class ArchiveActivity extends AppCompatActivity {
     private void setTempGraphData(
             ArrayList<DataPoint> alCurrentTemps, ArrayList<DataPoint> alNeededTemps,
             ArrayList<DataPoint> alHeaterStates, long min_time, long max_time) {
+
         DataPoint[] dpaCurrentTemps = new DataPoint[alCurrentTemps.size()];
         DataPoint[] dpaNeededTemps = new DataPoint[alNeededTemps.size()];
         DataPoint[] dpaHeaterStates = new DataPoint[alHeaterStates.size()];
@@ -210,64 +224,54 @@ public class ArchiveActivity extends AppCompatActivity {
         gvChamberGraph.getViewport().setMaxX(max_time);
     }
 
+    void scanArchiveData(ArchiveRecord[] records) {
+        ArrayList<DataPoint> currentTemps = new ArrayList<>();
+        ArrayList<DataPoint> neededTemps = new ArrayList<>();
+        ArrayList<DataPoint> currentHumids = new ArrayList<>();
+        ArrayList<DataPoint> neededHumids = new ArrayList<>();
+        ArrayList<DataPoint> heaterStates = new ArrayList<>();
+        ArrayList<DataPoint> wetterStates = new ArrayList<>();
+        ArrayList<DataPoint> chamberStates = new ArrayList<>();
+
+        long min_time = Long.MAX_VALUE;
+        long max_time = Long.MIN_VALUE;
+
+        for (ArchiveRecord record : records) {
+            if (record.timestamp <= min_time)
+                min_time = record.timestamp;
+
+            if (record.timestamp >= max_time)
+                max_time = record.timestamp;
+
+            int chamber = record.chamber;
+            if (chamber == IncubatorState.CHAMBER_UNDEF)
+                chamber = IncubatorState.CHAMBER_RIGHT;
+            currentTemps.add(new DataPoint(roundTimeFloor(record.timestamp),
+                    clearFloat(record.currentTemperature)));
+            currentHumids.add(new DataPoint(roundTimeFloor(record.timestamp),
+                    clearFloat(record.currentHumidity)));
+            neededTemps.add(new DataPoint(roundTimeFloor(record.timestamp),
+                    clearFloat(record.neededTemperature)));
+            neededHumids.add(new DataPoint(roundTimeFloor(record.timestamp),
+                    clearFloat(record.neededHumidity)));
+            heaterStates.add(new DataPoint(roundTimeFloor(record.timestamp),
+                    record.heater*HEATER_HEIGHT + HEATER_OFF));
+            wetterStates.add(new DataPoint(roundTimeFloor(record.timestamp),
+                    record.wetter*WETTER_HEIGHT + WETTER_OFF));
+            chamberStates.add(new DataPoint(roundTimeFloor(record.timestamp),
+                    CHAMBER_NEUTRAL + chamber*CHAMBER_HEIGHT));
+        }
+
+        min_time = roundTimeFloor(min_time);
+        max_time = roundTimeCeiling(max_time);
+
+        setTempGraphData(currentTemps, neededTemps, heaterStates, min_time, max_time);
+        setHumidGraphData(currentHumids, neededHumids, wetterStates, min_time, max_time);
+        setChamberGraphData(chamberStates, min_time, max_time);
+    }
+
     void scanRecords_local(int timespan_type) {
-        try {
-            File archive = archiver.getLocalArchiveFile();
-            archive.setReadable(true);
-
-            FileInputStream istream = new FileInputStream(archive);
-            byte[] buf = new byte[Archiver.RECORD_SIZE];
-
-            ArrayList<DataPoint> currentTemps = new ArrayList<>();
-            ArrayList<DataPoint> neededTemps = new ArrayList<>();
-            ArrayList<DataPoint> currentHumids = new ArrayList<>();
-            ArrayList<DataPoint> neededHumids = new ArrayList<>();
-            ArrayList<DataPoint> heaterStates = new ArrayList<>();
-            ArrayList<DataPoint> wetterStates = new ArrayList<>();
-            ArrayList<DataPoint> chamberStates = new ArrayList<>();
-
-            long min_time = Long.MAX_VALUE, max_time = Long.MIN_VALUE;
-
-            ArchiveRecord record;
-
-            long timespan_begin = timespanBegin(timespan_type);
-
-            while (istream.read(buf) != -1) {
-                record = archiver.getArchiveRecordFromBytes(buf);
-
-                if (record.timestamp < timespan_begin)
-                    continue;
-
-                if (record.timestamp <= min_time)
-                    min_time = record.timestamp;
-
-                if (record.timestamp >= max_time)
-                    max_time = record.timestamp;
-
-                currentTemps.add(new DataPoint(record.timestamp, record.currentTemperature));
-                currentHumids.add(new DataPoint(record.timestamp, record.currentHumidity));
-
-                neededTemps.add(new DataPoint(record.timestamp, record.neededTemperature));
-                neededHumids.add(new DataPoint(record.timestamp, record.neededHumidity));
-
-                currentTemps.add(new DataPoint(record.timestamp, record.currentTemperature));
-                currentHumids.add(new DataPoint(record.timestamp, record.currentHumidity));
-                neededTemps.add(new DataPoint(record.timestamp, record.neededTemperature));
-                neededHumids.add(new DataPoint(record.timestamp, record.neededHumidity));
-                heaterStates.add(new DataPoint(record.timestamp,
-                        record.heater*HEATER_ON + HEATER_OFF));
-                wetterStates.add(new DataPoint(record.timestamp,
-                        record.wetter*WETTER_ON + WETTER_OFF));
-                chamberStates.add(new DataPoint(record.timestamp, CHAMBER_NEUTRAL + record.chamber));
-            }
-
-            setTempGraphData(currentTemps, neededTemps, heaterStates, min_time, max_time);
-            setHumidGraphData(currentHumids, neededHumids, wetterStates, min_time, max_time);
-            setChamberGraphData(chamberStates, min_time, max_time);
-        }
-        catch (Exception e) {
-            e.printStackTrace();
-        }
+        scanArchiveData(archiver.getLocalArchiveRecords(timespanBegin(timespan_type)));
     }
 
     void scanRecords_cloud(int timespan_type) {
@@ -277,44 +281,15 @@ public class ArchiveActivity extends AppCompatActivity {
                 .build();
         ArchiveRequest archiveRequest = retrofit.create(ArchiveRequest.class);
         Call<ArchiveRecord[]> call = archiveRequest.getArchive(timespanBegin(timespan_type));
+        call.timeout().deadline(IncubatorStateActivity.REQ_TIMEOUT, TimeUnit.MILLISECONDS);
         call.enqueue(new Callback<ArchiveRecord[]>() {
             @Override
             public void onResponse(Call<ArchiveRecord[]> call, Response<ArchiveRecord[]> response) {
-                ArrayList<DataPoint> currentTemps = new ArrayList<>();
-                ArrayList<DataPoint> neededTemps = new ArrayList<>();
-                ArrayList<DataPoint> currentHumids = new ArrayList<>();
-                ArrayList<DataPoint> neededHumids = new ArrayList<>();
-                ArrayList<DataPoint> heaterStates = new ArrayList<>();
-                ArrayList<DataPoint> wetterStates = new ArrayList<>();
-                ArrayList<DataPoint> chamberStates = new ArrayList<>();
-
-                long min_time = Long.MAX_VALUE;
-                long max_time = Long.MIN_VALUE;
-
-                for (ArchiveRecord record : response.body()) {
-                    if (record.timestamp <= min_time)
-                        min_time = record.timestamp;
-
-                    if (record.timestamp >= max_time)
-                        max_time = record.timestamp;
-
-                    int chamber = record.chamber;
-                    if (chamber == IncubatorState.CHAMBER_UNDEF)
-                        chamber = IncubatorState.CHAMBER_RIGHT;
-                    currentTemps.add(new DataPoint(record.timestamp, record.currentTemperature));
-                    currentHumids.add(new DataPoint(record.timestamp, record.currentHumidity));
-                    neededTemps.add(new DataPoint(record.timestamp, record.neededTemperature));
-                    neededHumids.add(new DataPoint(record.timestamp, record.neededHumidity));
-                    heaterStates.add(new DataPoint(record.timestamp,
-                            record.heater*HEATER_ON + HEATER_OFF));
-                    wetterStates.add(new DataPoint(record.timestamp,
-                            record.wetter*WETTER_ON + WETTER_OFF));
-                    chamberStates.add(new DataPoint(record.timestamp, CHAMBER_NEUTRAL + chamber));
+                try {
+                    scanArchiveData(response.body());
+                } catch (Exception e) {
+                    e.printStackTrace();
                 }
-
-                setTempGraphData(currentTemps, neededTemps, heaterStates, min_time, max_time);
-                setHumidGraphData(currentHumids, neededHumids, wetterStates, min_time, max_time);
-                setChamberGraphData(chamberStates, min_time, max_time);
             }
 
             @Override

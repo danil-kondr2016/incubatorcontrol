@@ -3,10 +3,12 @@ package ru.danilakondratenko.incubatorcontrol;
 import android.content.Context;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 
 public class Archiver {
     /* Archive constants */
@@ -146,6 +148,36 @@ public class Archiver {
         }
 
         return record;
+    }
+
+    public ArchiveRecord[] getLocalArchiveRecords(long mintime)  {
+        ArrayList<ArchiveRecord> alResult = new ArrayList<>();
+
+        File archive = getLocalArchiveFile();
+        archive.setReadable(true);
+
+        try {
+            FileInputStream istream = new FileInputStream(archive);
+            byte[] buf = new byte[RECORD_SIZE];
+
+            ArchiveRecord record;
+
+            while (istream.read(buf) != -1) {
+                record = getArchiveRecordFromBytes(buf);
+
+                if (record.timestamp < mintime)
+                    continue;
+
+                alResult.add(record);
+            }
+
+            ArchiveRecord[] result = new ArchiveRecord[alResult.size()];
+            alResult.toArray(result);
+            return result;
+        } catch (Exception e) {
+            e.printStackTrace();
+            return null;
+        }
     }
 
     public void writeToArchive(IncubatorState state, IncubatorConfig cfg) throws IOException {
