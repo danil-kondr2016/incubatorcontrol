@@ -9,15 +9,12 @@ public class IncubatorConfig {
     public float neededTemperature, neededHumidity;
     public int rotationsPerDay, numberOfPrograms, currentProgram;
 
-    public boolean isCorrect;
-
     IncubatorConfig() {
         this.neededTemperature = NO_DATA_FLOAT;
         this.neededHumidity = NO_DATA_FLOAT;
         this.rotationsPerDay = NO_DATA_INT;
         this.numberOfPrograms = NO_DATA_INT;
         this.currentProgram = NO_DATA_INT;
-        this.isCorrect = true;
     }
 
     public void clear() {
@@ -26,7 +23,6 @@ public class IncubatorConfig {
         this.rotationsPerDay = NO_DATA_INT;
         this.numberOfPrograms = NO_DATA_INT;
         this.currentProgram = NO_DATA_INT;
-        this.isCorrect = true;
     }
 
     public String[] serialize() {
@@ -76,11 +72,14 @@ public class IncubatorConfig {
             }
         }
 
-        if (Float.isNaN(result.neededTemperature))
-            result.isCorrect = false;
-        if (Float.isNaN(result.neededHumidity))
-            result.isCorrect = false;
-
         return result;
+    }
+
+    public boolean isCorrect() {
+        if (Float.isNaN(this.neededTemperature))
+            return false;
+        if (Float.isNaN(this.neededHumidity))
+            return false;
+        return true;
     }
 }

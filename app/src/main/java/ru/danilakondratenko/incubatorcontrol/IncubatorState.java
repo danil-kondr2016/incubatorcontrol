@@ -110,4 +110,12 @@ public class IncubatorState {
         }
         return result;
     }
+
+    public boolean isCorrect() {
+        if (Float.isNaN(this.currentTemperature))
+            return false;
+        if (Float.isNaN(this.currentHumidity))
+            return false;
+        return true;
+    }
 }

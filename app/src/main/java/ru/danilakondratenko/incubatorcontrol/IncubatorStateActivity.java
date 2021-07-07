@@ -69,34 +69,6 @@ public class IncubatorStateActivity extends AppCompatActivity {
 
     public static final int ALARM_HEATER = 0x20;
 
-    /* Archive constants */
-    public static final String ARCHIVE_FILE_NAME = "archive.dat";
-
-    /* Archive state masks */
-    public static final byte ST_ZERO    = 0b00000000;
-
-    public static final byte ST_HEATER  = 0b00000001;
-    public static final byte ST_WETTER  = 0b00000010;
-    public static final byte ST_COOLER  = 0b00000100;
-    public static final byte ST_CHAMBER = 0b00111000;
-    public static final byte ST_POWER   = 0b01000000;
-
-    public static final byte ST_CHAMBER_LEFT    = 0b00111000;
-    public static final byte ST_CHAMBER_NEUTRAL = 0b00000000;
-    public static final byte ST_CHAMBER_RIGHT   = 0b00001000;
-    public static final byte ST_CHAMBER_ERROR   = 0b00010000;
-    public static final byte ST_CHAMBER_UNDEF   = 0b00011000;
-
-    public static final int ST_CHAMBER_SHIFT = 3;
-
-    /* Archive error masks */
-
-    public static final byte ER_ZERO          = 0b00000000;
-
-    public static final byte ER_OVERHEAT      = 0b00000001;
-    public static final byte ER_CHAMBER_ERROR = 0b00000100;
-    public static final byte ER_NO_INTERNET   = (byte) 0b10000000;
-
     /* Values needed to calculate coordinates */
     static final float BODY_WIDTH = 605, BODY_HEIGHT = 870;
     static final float COOLER_X = 260, COOLER_Y = 765;
@@ -218,61 +190,11 @@ public class IncubatorStateActivity extends AppCompatActivity {
 
     NotificationManager notificationManager;
 
-    private byte[] getArchiveRecord() {
-        short curTemp, curHumid;
-        curTemp = (short)(state.currentTemperature * 256);
-        curHumid = (short)(state.currentHumidity * 256);
-
-        byte st = ST_ZERO;
-        st  = state.heater ? ST_HEATER : ST_ZERO;
-        st |= state.wetter ? ST_WETTER : ST_ZERO;
-        st |= state.cooler ? ST_COOLER : ST_ZERO;
-
-        st |= ((byte)state.chamber << ST_CHAMBER_SHIFT) & ST_CHAMBER;
-
-        st |= (state.power ? ST_POWER : ST_ZERO);
-
-        int neededTempValue = (int)(cfg.neededTemperature * 10) - 360;
-        int neededHumidValue = (int)(cfg.neededHumidity);
-
-        byte er = ER_ZERO;
-        er  = state.overheat ? ER_OVERHEAT : ER_ZERO;
-        er |= (state.chamber == IncubatorState.CHAMBER_ERROR)
-                ? ER_CHAMBER_ERROR : ER_ZERO;
-        er |= (state.internet
-                || Float.isNaN(state.currentTemperature)
-                || Float.isNaN(state.currentHumidity)
-                || Float.isNaN(cfg.neededTemperature)
-                || Float.isNaN(cfg.neededHumidity))
-                ? ER_NO_INTERNET : ER_ZERO;
-
-        ByteBuffer bb = ByteBuffer.allocate(16);
-        bb.putLong(state.timestamp);
-        bb.putShort(curTemp);
-        bb.putShort(curHumid);
-        bb.put(st);
-        bb.put((byte)(neededTempValue & 0xFF));
-        bb.put((byte)(neededHumidValue & 0xFF));
-        bb.put(er);
-
-        return bb.array();
-    }
+    Archiver archiver;
 
     private void writeToArchive() {
         try {
-            File archive = new File(
-                    Environment.getExternalStorageDirectory(),
-                    ARCHIVE_FILE_NAME
-            );
-            archive.setReadable(true);
-            archive.setWritable(true);
-            if (!archive.exists())
-                archive.createNewFile();
-
-            PrintStream ps = new PrintStream(
-                    new FileOutputStream(archive, true)
-            );
-            ps.write(getArchiveRecord());
+            archiver.writeToArchive(state, cfg);
         }
         catch (Exception e) {
             e.printStackTrace();
@@ -308,7 +230,7 @@ public class IncubatorStateActivity extends AppCompatActivity {
                         hIncubator.sendEmptyMessage(INCUBATOR_ACCESSIBLE);
                 } else if (req.startsWith("request_config\r\n")) {
                     IncubatorConfig newCfg = IncubatorConfig.deserialize(strList);
-                    if (newCfg.isCorrect) {
+                    if (newCfg.isCorrect()) {
                         cfg = newCfg;
                         updateScreenText();
                         needConfig = false;
@@ -508,12 +430,7 @@ public class IncubatorStateActivity extends AppCompatActivity {
     }
 
     void sendConfig() {
-        if (Float.isNaN(cfg.neededTemperature))
-            cfg.isCorrect = false;
-        if (Float.isNaN(cfg.neededHumidity))
-            cfg.isCorrect = false;
-
-        if (!cfg.isCorrect)
+        if (!cfg.isCorrect())
             return;
 
         makeRequest(
@@ -580,6 +497,8 @@ public class IncubatorStateActivity extends AppCompatActivity {
 
         notificationManager =
                 (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+
+        archiver = new Archiver(getApplicationContext());
 
         prefs = PreferenceManager.getDefaultSharedPreferences(this);
         incubatorAddress = prefs.getString("incubator_address", DEFAULT_INCUBATOR_ADDRESS);

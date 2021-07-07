@@ -53,6 +53,17 @@ public class ArchiveRecord {
         this.neededHumidity = 0;
         this.heater = 0;
         this.wetter = 0;
-        chamber = CHAMBER_NEUTRAL;
+        this.chamber = CHAMBER_NEUTRAL;
+    }
+
+    ArchiveRecord(ArchiveRecord record) {
+        this.timestamp = record.timestamp;
+        this.currentTemperature = record.currentTemperature;
+        this.currentHumidity = record.currentHumidity;
+        this.neededTemperature = record.neededTemperature;
+        this.neededHumidity = record.neededHumidity;
+        this.heater = record.heater;
+        this.wetter = record.wetter;
+        this.chamber = record.chamber;
     }
 }

@@ -18,6 +18,7 @@ import android.widget.ArrayAdapter;
 import android.widget.Spinner;
 
 import com.jjoe64.graphview.GraphView;
+import com.jjoe64.graphview.GridLabelRenderer;
 import com.jjoe64.graphview.LegendRenderer;
 import com.jjoe64.graphview.helper.DateAsXAxisLabelFormatter;
 import com.jjoe64.graphview.series.DataPoint;
@@ -38,8 +39,6 @@ import retrofit2.converter.gson.GsonConverterFactory;
 import retrofit2.converter.scalars.ScalarsConverterFactory;
 
 public class ArchiveActivity extends AppCompatActivity {
-    private static final int RECORD_SIZE = 16;
-
     /* Timespan indexes */
 
     private static final int TIMESPAN_CURRENT = 0;
@@ -58,45 +57,6 @@ public class ArchiveActivity extends AppCompatActivity {
     public static final long MONTH  = DAY*30L;
     public static final long YEAR   = DAY*365L;
 
-    /* Archive record indexes */
-
-    public static final int TIMESTAMP          =  0;
-    public static final int CUR_TEMP           =  8;
-    public static final int CUR_HUMID          = 10;
-    public static final int ST                 = 12;
-    public static final int NEEDED_TEMP        = 13;
-    public static final int NEEDED_HUMID       = 14;
-    public static final int ER                 = 15;
-
-    /* Archive record data length */
-
-    public static final int TIMESTAMP_LEN      = 8;
-    public static final int CUR_TEMP_LEN       = 2;
-    public static final int CUR_HUMID_LEN      = 2;
-
-    /* Archive state masks */
-
-    public static final byte ST_ZERO    = 0b00000000;
-
-    public static final byte ST_HEATER  = 0b00000001;
-    public static final byte ST_WETTER  = 0b00000010;
-    public static final byte ST_COOLER  = 0b00000100;
-    public static final byte ST_CHAMBER = 0b00111000;
-
-    public static final byte ST_CHAMBER_LEFT    = 0b00111000;
-    public static final byte ST_CHAMBER_NEUTRAL = 0b00000000;
-    public static final byte ST_CHAMBER_RIGHT   = 0b00001000;
-    public static final byte ST_CHAMBER_ERROR   = 0b00010000;
-    public static final byte ST_CHAMBER_UNDEF   = 0b00011000;
-
-    /* Archive error masks */
-
-    public static final byte ER_ZERO          = 0b00000000;
-
-    public static final byte ER_OVERHEAT      = 0b00000001;
-    public static final byte ER_CHAMBER_ERROR = 0b00000100;
-    public static final byte ER_NO_INTERNET   = (byte) 0b10000000;
-
     /* Archive state position */
 
     public static final double WETTER_OFF  = 0;
@@ -107,11 +67,6 @@ public class ArchiveActivity extends AppCompatActivity {
     public static final double CHAMBER_NEUTRAL = 0;
     public static final double CHAMBER_LEFT    = CHAMBER_NEUTRAL - 1;
     public static final double CHAMBER_RIGHT   = CHAMBER_NEUTRAL + 1;
-
-    /* GraphView paint parameters */
-
-    public static final int PAINT_STROKE_WIDTH = 5;
-    public static final int PAINT_DASH_LENGTH = 40;
 
     /* GraphView label parameters */
 
@@ -128,14 +83,14 @@ public class ArchiveActivity extends AppCompatActivity {
     GraphView gvTempGraph;
     LineGraphSeries<DataPoint> currentTempSeries;
     LineGraphSeries<DataPoint> neededTempSeries;
+    LineGraphSeries<DataPoint> heaterSeries;
 
     GraphView gvHumidGraph;
     LineGraphSeries<DataPoint> currentHumidSeries;
     LineGraphSeries<DataPoint> neededHumidSeries;
+    LineGraphSeries<DataPoint> wetterSeries;
 
     GraphView gvChamberGraph;
-    LineGraphSeries<DataPoint> heaterSeries;
-    LineGraphSeries<DataPoint> wetterSeries;
     LineGraphSeries<DataPoint> chamberSeries;
 
     Handler hGraph;
@@ -143,6 +98,8 @@ public class ArchiveActivity extends AppCompatActivity {
 
     SharedPreferences prefs;
     SharedPreferences.OnSharedPreferenceChangeListener prefsListener;
+
+    Archiver archiver;
 
     String incubatorAddress = DEFAULT_INCUBATOR_ADDRESS;
     String archiveAddress = DEFAULT_ARCHIVE_ADDRESS;
@@ -159,7 +116,10 @@ public class ArchiveActivity extends AppCompatActivity {
 
             @Override
             public void onResponse(Call<String> call, Response<String> response) {
-                archiveAddress = response.body().trim();
+                if (response.body() != null)
+                    archiveAddress = response.body().trim();
+                else
+                    archiveAddress = DEFAULT_ARCHIVE_ADDRESS;
             }
 
             @Override
@@ -197,16 +157,66 @@ public class ArchiveActivity extends AppCompatActivity {
         return result;
     }
 
+    private void setTempGraphData(
+            ArrayList<DataPoint> alCurrentTemps, ArrayList<DataPoint> alNeededTemps,
+            ArrayList<DataPoint> alHeaterStates, long min_time, long max_time) {
+        DataPoint[] dpaCurrentTemps = new DataPoint[alCurrentTemps.size()];
+        DataPoint[] dpaNeededTemps = new DataPoint[alNeededTemps.size()];
+        DataPoint[] dpaHeaterStates = new DataPoint[alHeaterStates.size()];
+
+        alCurrentTemps.toArray(dpaCurrentTemps);
+        alNeededTemps.toArray(dpaNeededTemps);
+        alHeaterStates.toArray(dpaHeaterStates);
+
+        currentTempSeries.resetData(dpaCurrentTemps);
+        neededTempSeries.resetData(dpaNeededTemps);
+        heaterSeries.resetData(dpaHeaterStates);
+
+        gvTempGraph.getViewport().setXAxisBoundsManual(true);
+        gvTempGraph.getViewport().setMinX(min_time);
+        gvTempGraph.getViewport().setMaxX(max_time);
+    }
+
+    private void setHumidGraphData(
+            ArrayList<DataPoint> alCurrentHumids, ArrayList<DataPoint> alNeededHumids,
+            ArrayList<DataPoint> alWetterStates, long min_time, long max_time) {
+        DataPoint[] dpaCurrentHumids = new DataPoint[alCurrentHumids.size()];
+        DataPoint[] dpaNeededHumids = new DataPoint[alNeededHumids.size()];
+        DataPoint[] dpaWetterStates = new DataPoint[alWetterStates.size()];
+
+        alCurrentHumids.toArray(dpaCurrentHumids);
+        alNeededHumids.toArray(dpaNeededHumids);
+        alWetterStates.toArray(dpaWetterStates);
+
+        currentHumidSeries.resetData(dpaCurrentHumids);
+        neededHumidSeries.resetData(dpaNeededHumids);
+        wetterSeries.resetData(dpaWetterStates);
+
+        gvHumidGraph.getViewport().setXAxisBoundsManual(true);
+        gvHumidGraph.getViewport().setMinX(min_time);
+        gvHumidGraph.getViewport().setMaxX(max_time);
+    }
+
+    private void setChamberGraphData(
+            ArrayList<DataPoint> alChamberStates, long min_time, long max_time) {
+        DataPoint[] dpaChamberStates = new DataPoint[alChamberStates.size()];
+
+        alChamberStates.toArray(dpaChamberStates);
+
+        chamberSeries.resetData(dpaChamberStates);
+
+        gvChamberGraph.getViewport().setXAxisBoundsManual(true);
+        gvChamberGraph.getViewport().setMinX(min_time);
+        gvChamberGraph.getViewport().setMaxX(max_time);
+    }
+
     void scanRecords_local(int timespan_type) {
         try {
-            File archive = new File(
-                    Environment.getExternalStorageDirectory(),
-                    IncubatorStateActivity.ARCHIVE_FILE_NAME
-            );
+            File archive = archiver.getLocalArchiveFile();
             archive.setReadable(true);
 
             FileInputStream istream = new FileInputStream(archive);
-            byte[] buf = new byte[RECORD_SIZE];
+            byte[] buf = new byte[Archiver.RECORD_SIZE];
 
             ArrayList<DataPoint> currentTemps = new ArrayList<>();
             ArrayList<DataPoint> neededTemps = new ArrayList<>();
@@ -217,115 +227,43 @@ public class ArchiveActivity extends AppCompatActivity {
             ArrayList<DataPoint> chamberStates = new ArrayList<>();
 
             long min_time = Long.MAX_VALUE, max_time = Long.MIN_VALUE;
-            long time = 0;
 
-            double current_temp = 0;
-            double current_humid = 0;
-            double needed_temp = 0;
-            double needed_humid = 0;
-            int chamber = 0, old_chamber = 0;
-            boolean heater = false;
-            boolean wetter = false;
+            ArchiveRecord record;
 
             long timespan_begin = timespanBegin(timespan_type);
 
             while (istream.read(buf) != -1) {
-                time = ByteBuffer.wrap(buf, TIMESTAMP, TIMESTAMP_LEN).getLong();
+                record = archiver.getArchiveRecordFromBytes(buf);
 
-                if (time < timespan_begin)
+                if (record.timestamp < timespan_begin)
                     continue;
 
-                if (time <= min_time)
-                    min_time = time;
+                if (record.timestamp <= min_time)
+                    min_time = record.timestamp;
 
-                if (time >= max_time)
-                    max_time = time;
+                if (record.timestamp >= max_time)
+                    max_time = record.timestamp;
 
+                currentTemps.add(new DataPoint(record.timestamp, record.currentTemperature));
+                currentHumids.add(new DataPoint(record.timestamp, record.currentHumidity));
 
-                boolean has_internet = ((buf[ER] & ER_NO_INTERNET) == ER_NO_INTERNET);
+                neededTemps.add(new DataPoint(record.timestamp, record.neededTemperature));
+                neededHumids.add(new DataPoint(record.timestamp, record.neededHumidity));
 
-                current_temp = ByteBuffer.wrap(buf, CUR_TEMP, CUR_TEMP_LEN).getShort() / 256.0;
-                current_humid = ByteBuffer.wrap(buf, CUR_HUMID, CUR_HUMID_LEN).getShort() / 256.0;
-                needed_temp = ((double) buf[NEEDED_TEMP] + 360) / 10.0;
-                needed_humid = buf[NEEDED_HUMID];
-
-                heater = (buf[ST] & ST_HEATER) == ST_HEATER;
-                wetter = (buf[ST] & ST_WETTER) == ST_WETTER;
-
-                old_chamber = chamber;
-
-                switch (buf[ST] & ST_CHAMBER) {
-                    case ST_CHAMBER_LEFT:
-                        chamber = IncubatorState.CHAMBER_LEFT;
-                        break;
-                    case ST_CHAMBER_NEUTRAL:
-                        chamber = IncubatorState.CHAMBER_NEUTRAL;
-                        break;
-                    case ST_CHAMBER_RIGHT:
-                        chamber = IncubatorState.CHAMBER_RIGHT;
-                        break;
-                    case ST_CHAMBER_ERROR:
-                        chamber = IncubatorState.CHAMBER_ERROR;
-                        break;
-                    case ST_CHAMBER_UNDEF:
-                        chamber = IncubatorState.CHAMBER_RIGHT;
-                        break;
-                    default:
-                        chamber = IncubatorState.CHAMBER_ERROR;
-                }
-
-                currentTemps.add(new DataPoint(time, current_temp));
-                currentHumids.add(new DataPoint(time, current_humid));
-
-                neededTemps.add(new DataPoint(time, needed_temp));
-                neededHumids.add(new DataPoint(time, needed_humid));
-
-                heaterStates.add(new DataPoint(time, (heater) ? HEATER_ON : HEATER_OFF));
-                wetterStates.add(new DataPoint(time, (wetter) ? WETTER_ON : WETTER_OFF));
-                chamberStates.add(new DataPoint(time, CHAMBER_NEUTRAL - chamber));
+                currentTemps.add(new DataPoint(record.timestamp, record.currentTemperature));
+                currentHumids.add(new DataPoint(record.timestamp, record.currentHumidity));
+                neededTemps.add(new DataPoint(record.timestamp, record.neededTemperature));
+                neededHumids.add(new DataPoint(record.timestamp, record.neededHumidity));
+                heaterStates.add(new DataPoint(record.timestamp,
+                        record.heater*HEATER_ON + HEATER_OFF));
+                wetterStates.add(new DataPoint(record.timestamp,
+                        record.wetter*WETTER_ON + WETTER_OFF));
+                chamberStates.add(new DataPoint(record.timestamp, CHAMBER_NEUTRAL + record.chamber));
             }
 
-            DataPoint[] c_temps = new DataPoint[currentTemps.size()];
-            DataPoint[] n_temps = new DataPoint[neededTemps.size()];
-            DataPoint[] c_humids = new DataPoint[currentHumids.size()];
-            DataPoint[] n_humids = new DataPoint[neededHumids.size()];
-            DataPoint[] heaters = new DataPoint[heaterStates.size()];
-            DataPoint[] wetters = new DataPoint[wetterStates.size()];
-            DataPoint[] chambers = new DataPoint[chamberStates.size()];
-
-            currentTemps.toArray(c_temps);
-            neededTemps.toArray(n_temps);
-            currentHumids.toArray(c_humids);
-            neededHumids.toArray(n_humids);
-            heaterStates.toArray(heaters);
-            wetterStates.toArray(wetters);
-            chamberStates.toArray(chambers);
-
-            currentTempSeries.resetData(c_temps);
-            neededTempSeries.resetData(n_temps);
-            currentHumidSeries.resetData(c_humids);
-            neededHumidSeries.resetData(n_humids);
-            heaterSeries.resetData(heaters);
-            wetterSeries.resetData(wetters);
-            chamberSeries.resetData(chambers);
-
-            gvTempGraph.getViewport().setXAxisBoundsManual(true);
-            gvTempGraph.getViewport().setMinX(min_time);
-            gvTempGraph.getViewport().setMaxX(max_time);
-            gvTempGraph.getGridLabelRenderer().setNumHorizontalLabels(NUM_HORIZONTAL);
-            gvTempGraph.getGridLabelRenderer().setNumVerticalLabels(NUM_VERTICAL);
-
-            gvHumidGraph.getViewport().setXAxisBoundsManual(true);
-            gvHumidGraph.getViewport().setMinX(min_time);
-            gvHumidGraph.getViewport().setMaxX(max_time);
-            gvHumidGraph.getGridLabelRenderer().setNumHorizontalLabels(NUM_HORIZONTAL);
-            gvHumidGraph.getGridLabelRenderer().setNumVerticalLabels(NUM_VERTICAL);
-
-            gvChamberGraph.getViewport().setXAxisBoundsManual(true);
-            gvChamberGraph.getViewport().setMinX(min_time);
-            gvChamberGraph.getViewport().setMaxX(max_time);
-            gvChamberGraph.getGridLabelRenderer().setNumHorizontalLabels(NUM_HORIZONTAL);
-            gvChamberGraph.getGridLabelRenderer().setNumVerticalLabels(NUM_VERTICAL);
+            setTempGraphData(currentTemps, neededTemps, heaterStates, min_time, max_time);
+            setHumidGraphData(currentHumids, neededHumids, wetterStates, min_time, max_time);
+            setChamberGraphData(chamberStates, min_time, max_time);
         }
         catch (Exception e) {
             e.printStackTrace();
@@ -368,53 +306,15 @@ public class ArchiveActivity extends AppCompatActivity {
                     neededTemps.add(new DataPoint(record.timestamp, record.neededTemperature));
                     neededHumids.add(new DataPoint(record.timestamp, record.neededHumidity));
                     heaterStates.add(new DataPoint(record.timestamp,
-                            record.heater + HEATER_OFF));
+                            record.heater*HEATER_ON + HEATER_OFF));
                     wetterStates.add(new DataPoint(record.timestamp,
-                            record.wetter + WETTER_OFF));
+                            record.wetter*WETTER_ON + WETTER_OFF));
                     chamberStates.add(new DataPoint(record.timestamp, CHAMBER_NEUTRAL + chamber));
                 }
 
-                DataPoint[] c_temps = new DataPoint[currentTemps.size()];
-                DataPoint[] n_temps = new DataPoint[neededTemps.size()];
-                DataPoint[] c_humids = new DataPoint[currentHumids.size()];
-                DataPoint[] n_humids = new DataPoint[neededHumids.size()];
-                DataPoint[] heaters = new DataPoint[heaterStates.size()];
-                DataPoint[] wetters = new DataPoint[wetterStates.size()];
-                DataPoint[] chambers = new DataPoint[chamberStates.size()];
-
-                currentTemps.toArray(c_temps);
-                neededTemps.toArray(n_temps);
-                currentHumids.toArray(c_humids);
-                neededHumids.toArray(n_humids);
-                heaterStates.toArray(heaters);
-                wetterStates.toArray(wetters);
-                chamberStates.toArray(chambers);
-
-                currentTempSeries.resetData(c_temps);
-                neededTempSeries.resetData(n_temps);
-                currentHumidSeries.resetData(c_humids);
-                neededHumidSeries.resetData(n_humids);
-                heaterSeries.resetData(heaters);
-                wetterSeries.resetData(wetters);
-                chamberSeries.resetData(chambers);
-
-                gvTempGraph.getViewport().setXAxisBoundsManual(true);
-                gvTempGraph.getViewport().setMinX(min_time);
-                gvTempGraph.getViewport().setMaxX(max_time);
-                gvTempGraph.getGridLabelRenderer().setNumHorizontalLabels(NUM_HORIZONTAL);
-                gvTempGraph.getGridLabelRenderer().setNumVerticalLabels(NUM_VERTICAL);
-
-                gvHumidGraph.getViewport().setXAxisBoundsManual(true);
-                gvHumidGraph.getViewport().setMinX(min_time);
-                gvHumidGraph.getViewport().setMaxX(max_time);
-                gvHumidGraph.getGridLabelRenderer().setNumHorizontalLabels(NUM_HORIZONTAL);
-                gvHumidGraph.getGridLabelRenderer().setNumVerticalLabels(NUM_VERTICAL);
-
-                gvChamberGraph.getViewport().setXAxisBoundsManual(true);
-                gvChamberGraph.getViewport().setMinX(min_time);
-                gvChamberGraph.getViewport().setMaxX(max_time);
-                gvChamberGraph.getGridLabelRenderer().setNumHorizontalLabels(NUM_HORIZONTAL);
-                gvChamberGraph.getGridLabelRenderer().setNumVerticalLabels(NUM_VERTICAL);
+                setTempGraphData(currentTemps, neededTemps, heaterStates, min_time, max_time);
+                setHumidGraphData(currentHumids, neededHumids, wetterStates, min_time, max_time);
+                setChamberGraphData(chamberStates, min_time, max_time);
             }
 
             @Override
@@ -437,6 +337,8 @@ public class ArchiveActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_archive);
 
+        archiver = new Archiver(getApplicationContext());
+
         prefs = PreferenceManager.getDefaultSharedPreferences(this);
         incubatorAddress = prefs.getString("incubator_address", DEFAULT_INCUBATOR_ADDRESS);
         cloudArchiveMode = prefs.getBoolean("cloud_archive_mode", true);
@@ -448,7 +350,8 @@ public class ArchiveActivity extends AppCompatActivity {
                     incubatorAddress = sharedPreferences.getString(
                             key, DEFAULT_INCUBATOR_ADDRESS
                     );
-                    requestArchiveAddress();
+                    if (cloudArchiveMode)
+                        requestArchiveAddress();
                 } else if (key.compareTo("cloud_archive_mode") == 0) {
                     cloudArchiveMode = sharedPreferences.getBoolean("cloud_archive_mode", true);
                 }
@@ -456,7 +359,8 @@ public class ArchiveActivity extends AppCompatActivity {
         };
         prefs.registerOnSharedPreferenceChangeListener(prefsListener);
 
-        requestArchiveAddress();
+        if (cloudArchiveMode)
+            requestArchiveAddress();
 
         ArrayAdapter<CharSequence> adapter =
                 ArrayAdapter.createFromResource(
@@ -468,10 +372,8 @@ public class ArchiveActivity extends AppCompatActivity {
         spTimespan.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
-                if (position != TIMESPAN_CURRENT) {
-                    hGraph.removeCallbacks(rGraphUpdate);
-
-                } else {
+                hGraph.removeCallbacks(rGraphUpdate);
+                if (position == TIMESPAN_CURRENT) {
                     hGraph.postDelayed(rGraphUpdate, IncubatorStateActivity.REQ_TIMEOUT);
                 }
                 scanRecords(position);
@@ -501,7 +403,7 @@ public class ArchiveActivity extends AppCompatActivity {
         gvTempGraph.addSeries(currentTempSeries);
 
         neededTempSeries = new LineGraphSeries<>();
-        neededTempSeries.setColor(Color.argb(255, 0, 0, 127));
+        neededTempSeries.setColor(Color.argb(255, 0, 0, 127)); // Dark blue
         neededTempSeries.setTitle(getString(R.string.needed_temperature));
         gvTempGraph.addSeries(neededTempSeries);
 
@@ -528,7 +430,7 @@ public class ArchiveActivity extends AppCompatActivity {
         gvHumidGraph.addSeries(currentHumidSeries);
 
         neededHumidSeries = new LineGraphSeries<>();
-        neededHumidSeries.setColor(Color.argb(255, 0, 127, 0));
+        neededHumidSeries.setColor(Color.argb(255, 0, 127, 0)); // Dark green
         neededHumidSeries.setTitle(getString(R.string.needed_humidity));
         gvHumidGraph.addSeries(neededHumidSeries);
 
