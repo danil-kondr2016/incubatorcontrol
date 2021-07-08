@@ -251,9 +251,9 @@ public class ArchiveActivity extends AppCompatActivity {
             currentHumids.add(new DataPoint(roundTimeFloor(record.timestamp),
                     clearFloat(record.currentHumidity)));
             neededTemps.add(new DataPoint(roundTimeFloor(record.timestamp),
-                    clearFloat(record.neededTemperature)));
+                    (((int)record.neededTemperature)*10)/10.0f));
             neededHumids.add(new DataPoint(roundTimeFloor(record.timestamp),
-                    clearFloat(record.neededHumidity)));
+                    (int)(record.neededHumidity)));
             heaterStates.add(new DataPoint(roundTimeFloor(record.timestamp),
                     record.heater*HEATER_HEIGHT + HEATER_OFF));
             wetterStates.add(new DataPoint(roundTimeFloor(record.timestamp),
@@ -275,28 +275,14 @@ public class ArchiveActivity extends AppCompatActivity {
     }
 
     void scanRecords_cloud(int timespan_type) {
-        Retrofit retrofit = new Retrofit.Builder()
-                .baseUrl("http://" + archiveAddress)
-                .addConverterFactory(GsonConverterFactory.create())
-                .build();
-        ArchiveRequest archiveRequest = retrofit.create(ArchiveRequest.class);
-        Call<ArchiveRecord[]> call = archiveRequest.getArchive(timespanBegin(timespan_type));
-        call.timeout().deadline(IncubatorStateActivity.REQ_TIMEOUT, TimeUnit.MILLISECONDS);
-        call.enqueue(new Callback<ArchiveRecord[]>() {
-            @Override
-            public void onResponse(Call<ArchiveRecord[]> call, Response<ArchiveRecord[]> response) {
-                try {
-                    scanArchiveData(response.body());
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-            }
-
-            @Override
-            public void onFailure(Call<ArchiveRecord[]> call, Throwable t) {
-
-            }
-        });
+        try {
+            scanArchiveData(
+                    new ArchiveRequestTask().execute(
+                            archiveAddress, String.valueOf(timespanBegin(timespan_type))
+                    ).get(IncubatorStateActivity.REQ_TIMEOUT, TimeUnit.MILLISECONDS));
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     void scanRecords(int timespan_type) {
