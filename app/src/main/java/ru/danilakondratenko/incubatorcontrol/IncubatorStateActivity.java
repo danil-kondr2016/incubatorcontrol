@@ -32,7 +32,6 @@ import android.view.WindowManager;
 import android.widget.ImageView;
 import android.widget.TextView;
 
-import java.util.Arrays;
 import java.util.Date;
 import java.util.Locale;
 import java.util.Timer;
@@ -64,6 +63,7 @@ public class IncubatorStateActivity extends AppCompatActivity {
     static final float WETTER_X = 30, WETTER_Y = 264;
     static final float HEATER_X = 237, HEATER_Y = 704;
     static final float CHAMBER_X = 92, CHAMBER_Y = 297;
+    static final float CAMERA_X = 255, CAMERA_Y = 460;
     static final float SCREEN_X = 256, SCREEN_Y = 32;
     static final float MINUS_BTN_X = 376, MENU_BTN_X = 496, PLUS_BTN_X = 256, X_BTN_Y = 120;
     static final float ARCHIVE_BTN_X = 130, ARCHIVE_BTN_Y = 55;
@@ -146,7 +146,7 @@ public class IncubatorStateActivity extends AppCompatActivity {
 
     ImageView ivIncubatorBody,
             ivIncubatorCooler, ivIncubatorWetter, ivIncubatorHeater, ivIncubatorChamber,
-            ivIncubatorScreen;
+            ivIncubatorCamera, ivIncubatorScreen;
 
     ImageView ivIncubatorMinusBtn, ivIncubatorMenuBtn, ivIncubatorPlusBtn,
             ivIncubatorArchive;
@@ -428,11 +428,6 @@ public class IncubatorStateActivity extends AppCompatActivity {
                     IncubatorStateActivity.this, IncubatorSettingsActivity.class
             );
             startActivity(intent);
-        } else if (item.getItemId() == R.id.video) {
-            Intent intent = new Intent(
-                    IncubatorStateActivity.this, IncubatorVideoActivity.class
-            );
-            startActivity(intent);
         }
         return super.onOptionsItemSelected(item);
     }
@@ -666,6 +661,8 @@ public class IncubatorStateActivity extends AppCompatActivity {
                 ContextCompat.getDrawable(this, R.drawable.ic_incubator_wetter_off);
         Drawable dIncubatorChamber =
                 ContextCompat.getDrawable(this, R.drawable.ic_incubator_chamber);
+        Drawable dIncubatorCamera =
+                ContextCompat.getDrawable(this, R.drawable.ic_baseline_camera_alt_24);
         Drawable dIncubatorScreen =
                 ContextCompat.getDrawable(this, R.drawable.ic_incubator_screen_off);
         Drawable dIncubatorBtn =
@@ -738,6 +735,25 @@ public class IncubatorStateActivity extends AppCompatActivity {
         addContentView(ivIncubatorChamber, new ViewGroup.LayoutParams(
                 (int)(dIncubatorChamber.getIntrinsicWidth() * k),
                 (int)(dIncubatorChamber.getIntrinsicHeight() * k)
+        ));
+
+        ivIncubatorCamera = new ImageView(this);
+        ivIncubatorCamera.setImageResource(R.drawable.ic_baseline_camera_alt_24);
+        ivIncubatorCamera.setX(incubatorX + (CAMERA_X / BODY_WIDTH) * incubatorBodyWidth);
+        ivIncubatorCamera.setY(incubatorY + (CAMERA_Y / BODY_HEIGHT) * incubatorBodyHeight);
+        ivIncubatorCamera.setVisibility(View.VISIBLE);
+        ivIncubatorCamera.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                Intent intent = new Intent(
+                        IncubatorStateActivity.this, IncubatorVideoActivity.class
+                );
+                startActivity(intent);
+            }
+        });
+        addContentView(ivIncubatorCamera, new ViewGroup.LayoutParams(
+                (int)(dIncubatorCamera.getIntrinsicWidth() * k * 4),
+                (int)(dIncubatorCamera.getIntrinsicHeight() * k * 4)
         ));
 
         ivIncubatorScreen = new ImageView(this);

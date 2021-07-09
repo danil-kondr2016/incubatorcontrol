@@ -31,8 +31,10 @@ public class IncubatorVideoActivity extends AppCompatActivity {
 
     void updateLights() {
         if (lights) {
+            btnToggleLights.setBackgroundColor(getResources().getColor(R.color.colorPrimary));
             btnToggleLights.setText(R.string.turn_lights_off);
         } else {
+            btnToggleLights.setBackgroundColor(getResources().getColor(R.color.purple_700));
             btnToggleLights.setText(R.string.turn_lights_on);
         }
     }
@@ -98,5 +100,12 @@ public class IncubatorVideoActivity extends AppCompatActivity {
             }
         }, 0, Requestor.REQ_TIMEOUT);
 
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        videoView.stopPlayback();
+        videoView.start();
     }
 }
