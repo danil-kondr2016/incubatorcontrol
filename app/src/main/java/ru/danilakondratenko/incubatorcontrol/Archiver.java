@@ -9,6 +9,17 @@ import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+
+import retrofit2.Call;
+import retrofit2.Response;
+import retrofit2.Retrofit;
+import retrofit2.converter.gson.GsonConverterFactory;
+import retrofit2.converter.scalars.ScalarsConverterFactory;
 
 public class Archiver {
     /* Archive constants */
@@ -55,11 +66,45 @@ public class Archiver {
     public static final int TIMESTAMP_LEN      = 8;
     public static final int CUR_TEMP_LEN       = 2;
     public static final int CUR_HUMID_LEN      = 2;
+    private static final String DEFAULT_CLOUD_ARCHIVE_ADDRESS = "185.26.121.126";
+    private static final long REQ_TIMEOUT = 2000;
+
+    private ExecutorService executor;
 
     Context context;
+    String cloudArchiveAddress;
 
     Archiver(Context context) {
+        this.executor = Executors.newSingleThreadExecutor();
+
         this.context = context;
+        this.cloudArchiveAddress = DEFAULT_CLOUD_ARCHIVE_ADDRESS;
+    }
+
+    public void retrieveCloudArchiveAddress(String incubatorAddress) {
+        Retrofit retrofit = new Retrofit.Builder()
+                .baseUrl("http://" + incubatorAddress)
+                .addConverterFactory(ScalarsConverterFactory.create())
+                .build();
+        IncubatorRequest request = retrofit.create(IncubatorRequest.class);
+        Call<String> call = request.getArchiveAddress();
+        Future<String> future = executor.submit(new Callable<String>() {
+
+            @Override
+            public String call() throws Exception {
+                Response<String> response = call.execute();
+                if (response.body() != null)
+                    return response.body().trim();
+                else
+                    return DEFAULT_CLOUD_ARCHIVE_ADDRESS;
+            }
+        });
+        try {
+            cloudArchiveAddress = future.get(REQ_TIMEOUT, TimeUnit.MILLISECONDS);
+        } catch (Exception e) {
+            e.printStackTrace();
+            cloudArchiveAddress = DEFAULT_CLOUD_ARCHIVE_ADDRESS;
+        }
     }
 
     public File getLocalArchiveFile() {
@@ -116,7 +161,7 @@ public class Archiver {
         return bb.array();
     }
 
-    public ArchiveRecord getArchiveRecordFromBytes(byte[] buf) {
+    public ArchiveRecord getLocalArchiveRecordFromBytes(byte[] buf) {
         ArchiveRecord record = new ArchiveRecord();
 
         record.timestamp = ByteBuffer.wrap(buf, TIMESTAMP, TIMESTAMP_LEN).getLong();
@@ -163,7 +208,7 @@ public class Archiver {
             ArchiveRecord record;
 
             while (istream.read(buf) != -1) {
-                record = getArchiveRecordFromBytes(buf);
+                record = getLocalArchiveRecordFromBytes(buf);
 
                 if (record.timestamp < mintime)
                     continue;
@@ -180,7 +225,31 @@ public class Archiver {
         }
     }
 
-    public void writeToArchive(IncubatorState state, IncubatorConfig cfg) throws IOException {
+    public ArchiveRecord[] getCloudArchiveRecords(long mintime) {
+        Retrofit retrofit = new Retrofit.Builder()
+                .baseUrl("http://" + cloudArchiveAddress)
+                .addConverterFactory(GsonConverterFactory.create())
+                .build();
+        ArchiveRequest archiveRequest = retrofit.create(ArchiveRequest.class);
+        Call<ArchiveRecord[]> call = archiveRequest.getArchive(mintime);
+        Future<ArchiveRecord[]> future = executor.submit(new Callable<ArchiveRecord[]>() {
+
+            @Override
+            public ArchiveRecord[] call() throws Exception {
+                Response<ArchiveRecord[]> response = call.execute();
+
+                return response.body();
+            }
+        });
+        try {
+            return future.get(REQ_TIMEOUT, TimeUnit.MILLISECONDS);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return null;
+        }
+    }
+
+    public void writeToLocalArchive(IncubatorState state, IncubatorConfig cfg) throws IOException {
         File archive = getLocalArchiveFile();
 
         PrintStream ps = new PrintStream(

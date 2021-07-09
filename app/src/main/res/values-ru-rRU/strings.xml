@@ -24,4 +24,6 @@
     <string name="cloud_archive_mode">Режим облачного архива</string>
     <string name="needed_temperature">Необходимая температура</string>
     <string name="needed_humidity">Необходимая влажность</string>
+    <string name="turn_lights_on">Включить свет</string>
+    <string name="turn_lights_off">Выключить свет</string>
 </resources>

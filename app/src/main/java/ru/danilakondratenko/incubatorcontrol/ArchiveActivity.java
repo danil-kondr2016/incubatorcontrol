@@ -23,16 +23,10 @@ import com.jjoe64.graphview.series.LineGraphSeries;
 import java.text.DateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
-import java.util.concurrent.TimeUnit;
-
-import retrofit2.Call;
-import retrofit2.Callback;
-import retrofit2.Response;
-import retrofit2.Retrofit;
-import retrofit2.converter.gson.GsonConverterFactory;
-import retrofit2.converter.scalars.ScalarsConverterFactory;
 
 public class ArchiveActivity extends AppCompatActivity {
+    public static final long REQ_TIMEOUT = 2000;
+
     /* Timespan indexes */
 
     private static final int TIMESPAN_CURRENT = 0;
@@ -74,7 +68,6 @@ public class ArchiveActivity extends AppCompatActivity {
     private static final String LOG_TAG = "Archive";
 
     public static final String DEFAULT_INCUBATOR_ADDRESS = "incubator.local";
-    public static final String DEFAULT_ARCHIVE_ADDRESS = "185.26.121.126";
 
     Spinner spTimespan;
 
@@ -100,7 +93,6 @@ public class ArchiveActivity extends AppCompatActivity {
     Archiver archiver;
 
     String incubatorAddress = DEFAULT_INCUBATOR_ADDRESS;
-    String archiveAddress = DEFAULT_ARCHIVE_ADDRESS;
     private boolean cloudArchiveMode = false;
 
     float clearFloat(float x) {
@@ -116,30 +108,6 @@ public class ArchiveActivity extends AppCompatActivity {
     long roundTimeCeiling(long x) {
         long milliseconds = x % 1000L;
         return x + (1000L - milliseconds);
-    }
-
-    private void requestArchiveAddress() {
-        Retrofit retrofit = new Retrofit.Builder()
-                .baseUrl("http://" + incubatorAddress)
-                .addConverterFactory(ScalarsConverterFactory.create())
-                .build();
-        IncubatorRequest request = retrofit.create(IncubatorRequest.class);
-        Call<String> call = request.getArchiveAddress();
-        call.enqueue(new Callback<String>() {
-
-            @Override
-            public void onResponse(Call<String> call, Response<String> response) {
-                if (response.body() != null)
-                    archiveAddress = response.body().trim();
-                else
-                    archiveAddress = DEFAULT_ARCHIVE_ADDRESS;
-            }
-
-            @Override
-            public void onFailure(Call<String> call, Throwable t) {
-
-            }
-        });
     }
 
     private long timespanBegin(int timespan_type) {
@@ -271,15 +239,13 @@ public class ArchiveActivity extends AppCompatActivity {
     }
 
     void scanRecords_local(int timespan_type) {
+        Log.i(LOG_TAG, "scanRecords_local");
         scanArchiveData(archiver.getLocalArchiveRecords(timespanBegin(timespan_type)));
     }
 
     void scanRecords_cloud(int timespan_type) {
         try {
-            scanArchiveData(
-                    new ArchiveRequestTask().execute(
-                            archiveAddress, String.valueOf(timespanBegin(timespan_type))
-                    ).get(IncubatorStateActivity.REQ_TIMEOUT, TimeUnit.MILLISECONDS));
+            scanArchiveData(archiver.getCloudArchiveRecords(timespanBegin(timespan_type)));
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -312,7 +278,7 @@ public class ArchiveActivity extends AppCompatActivity {
                             key, DEFAULT_INCUBATOR_ADDRESS
                     );
                     if (cloudArchiveMode)
-                        requestArchiveAddress();
+                        archiver.retrieveCloudArchiveAddress(incubatorAddress);
                 } else if (key.compareTo("cloud_archive_mode") == 0) {
                     cloudArchiveMode = sharedPreferences.getBoolean("cloud_archive_mode", true);
                 }
@@ -321,7 +287,7 @@ public class ArchiveActivity extends AppCompatActivity {
         prefs.registerOnSharedPreferenceChangeListener(prefsListener);
 
         if (cloudArchiveMode)
-            requestArchiveAddress();
+            archiver.retrieveCloudArchiveAddress(incubatorAddress);
 
         ArrayAdapter<CharSequence> adapter =
                 ArrayAdapter.createFromResource(
@@ -335,7 +301,7 @@ public class ArchiveActivity extends AppCompatActivity {
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
                 hGraph.removeCallbacks(rGraphUpdate);
                 if (position == TIMESPAN_CURRENT) {
-                    hGraph.postDelayed(rGraphUpdate, IncubatorStateActivity.REQ_TIMEOUT);
+                    hGraph.postDelayed(rGraphUpdate, REQ_TIMEOUT);
                 }
                 scanRecords(position);
             }
@@ -424,7 +390,7 @@ public class ArchiveActivity extends AppCompatActivity {
             @Override
             public void run() {
                 scanRecords(TIMESPAN_CURRENT);
-                hGraph.postDelayed(this, IncubatorStateActivity.REQ_TIMEOUT);
+                hGraph.postDelayed(this, REQ_TIMEOUT);
             }
         };
     }
@@ -439,7 +405,7 @@ public class ArchiveActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
-        hGraph.postDelayed(rGraphUpdate, IncubatorStateActivity.REQ_TIMEOUT);
+        hGraph.postDelayed(rGraphUpdate, REQ_TIMEOUT);
     }
 
     @Override

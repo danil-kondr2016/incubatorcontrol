@@ -7,20 +7,17 @@ import androidx.core.app.NotificationCompat;
 import androidx.core.content.ContextCompat;
 import androidx.preference.PreferenceManager;
 
-import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
@@ -35,21 +32,11 @@ import android.view.WindowManager;
 import android.widget.ImageView;
 import android.widget.TextView;
 
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.PrintStream;
-import java.nio.ByteBuffer;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.Locale;
 import java.util.Timer;
 import java.util.TimerTask;
-import java.util.concurrent.TimeUnit;
-
-import retrofit2.Call;
-import retrofit2.Callback;
-import retrofit2.Response;
-import retrofit2.Retrofit;
-import retrofit2.converter.scalars.ScalarsConverterFactory;
 
 public class IncubatorStateActivity extends AppCompatActivity {
     /* Incubator request constants */
@@ -68,6 +55,8 @@ public class IncubatorStateActivity extends AppCompatActivity {
     public static final int CONFIG_AVAILABLE = 0x17;
 
     public static final int ALARM_HEATER = 0x20;
+
+    public static final int LIGHTS_REQUEST = 0x30;
 
     /* Values needed to calculate coordinates */
     static final float BODY_WIDTH = 605, BODY_HEIGHT = 870;
@@ -123,8 +112,6 @@ public class IncubatorStateActivity extends AppCompatActivity {
     static final int DELTA_PHASE = 1;
     static final int N_PHASES = 3;
 
-    private static final int STORAGE_REQUEST = 1;
-
     /* Program constants */
     static final int DELTA_CURRENT_PROGRAM = 1;
 
@@ -177,12 +164,10 @@ public class IncubatorStateActivity extends AppCompatActivity {
     private IncubatorState state;
     private IncubatorConfig cfg;
     private int oldChamber = IncubatorState.CHAMBER_NEUTRAL;
-    private int screenTaps = 0;
 
-    Handler hIncubator, hOverheat, hConfig, hCoolerAnimation, hHeaterAlarm;
+    Handler hIncubator, hOverheat, hConfig, hCoolerAnimation, hHeaterAlarm, hLights;
     private boolean needConfig = true, manualRotationMode;
 
-    private boolean extStoragePermitted = false;
     private boolean overheatNotified = false;
 
     SharedPreferences prefs;
@@ -191,62 +176,15 @@ public class IncubatorStateActivity extends AppCompatActivity {
     NotificationManager notificationManager;
 
     Archiver archiver;
+    Requestor requestor;
 
     private void writeToArchive() {
         try {
-            archiver.writeToArchive(state, cfg);
+            archiver.writeToLocalArchive(state, cfg);
         }
         catch (Exception e) {
             e.printStackTrace();
         }
-    }
-
-    private void makeRequest(String req) {
-        Retrofit retrofit = new Retrofit.Builder()
-                .baseUrl("http://" + incubatorAddress)
-                .addConverterFactory(ScalarsConverterFactory.create())
-                .build();
-
-        IncubatorRequest incubatorRequest = retrofit.create(IncubatorRequest.class);
-        Call<String> call = incubatorRequest.getResponse(req);
-        call.timeout().deadline(REQ_TIMEOUT, TimeUnit.MILLISECONDS);
-        call.enqueue(new Callback<String>() {
-            @Override
-            public void onResponse(@NonNull Call<String> call, @NonNull Response<String> response) {
-                Log.i(LOG_TAG, req);
-                String[] strList = response.body().replace("\r\n", "\n").split("\n");
-
-                if (req.startsWith("request_state\r\n")) {
-                    oldChamber = state.chamber;
-                    state = IncubatorState.deserialize(strList);
-                    if (state.overheat)
-                        hOverheat.sendEmptyMessage(OVERHEAT_ERROR);
-                    else
-                        hOverheat.sendEmptyMessage(NO_ERROR);
-
-                    if (!state.power)
-                        hIncubator.sendEmptyMessage(INCUBATOR_TURNED_OFF);
-                    else
-                        hIncubator.sendEmptyMessage(INCUBATOR_ACCESSIBLE);
-                } else if (req.startsWith("request_config\r\n")) {
-                    IncubatorConfig newCfg = IncubatorConfig.deserialize(strList);
-                    if (newCfg.isCorrect()) {
-                        cfg = newCfg;
-                        updateScreenText();
-                        needConfig = false;
-                    }
-                }
-
-                state.timestamp = new Date().getTime();
-                writeToArchive();
-            }
-
-            @Override
-            public void onFailure(Call<String> call, Throwable t) {
-                hIncubator.sendEmptyMessage(INCUBATOR_INACCESSIBLE);
-                writeToArchive();
-            }
-        });
     }
 
     void updateCooler() {
@@ -422,41 +360,58 @@ public class IncubatorStateActivity extends AppCompatActivity {
     }
 
     void requestState() {
-        makeRequest("request_state\r\n");
+        requestor.requestState(new RequestCallback() {
+            @Override
+            public void onAnswer(String answer) {
+                oldChamber = state.chamber;
+                state = IncubatorState.deserialize(answer.replace("\r\n", "\n").split("\n"));
+                state.timestamp = new Date().getTime();
+
+                if (state.power)
+                    hIncubator.sendEmptyMessage(INCUBATOR_ACCESSIBLE);
+                else
+                    hIncubator.sendEmptyMessage(INCUBATOR_TURNED_OFF);
+
+                if (state.overheat)
+                    hOverheat.sendEmptyMessage(OVERHEAT_ERROR);
+                else
+                    hOverheat.sendEmptyMessage(NO_ERROR);
+
+                writeToArchive();
+            }
+
+            @Override
+            public void onFailure() {
+                hIncubator.sendEmptyMessage(INCUBATOR_INACCESSIBLE);
+                state.timestamp = new Date().getTime();
+                writeToArchive();
+            }
+        });
     }
 
     void requestConfig() {
-        makeRequest("request_config\r\n");
+        requestor.requestConfig(new RequestCallback() {
+            @Override
+            public void onAnswer(String answer) {
+                IncubatorConfig newCfg =
+                        IncubatorConfig.deserialize(answer.replace("\r\n", "\n").split("\n"));
+                if (newCfg.isCorrect()) {
+                    cfg = newCfg;
+                    updateScreenText();
+                    needConfig = false;
+                }
+            }
+
+            @Override
+            public void onFailure() {
+
+            }
+        });
+
     }
 
     void sendConfig() {
-        if (!cfg.isCorrect())
-            return;
-
-        makeRequest(
-                String.format(Locale.US,
-                        "needed_temp %.2f\r\n",
-                        cfg.neededTemperature
-                )
-        );
-        makeRequest(
-                String.format(Locale.US,
-                        "needed_humid %.2f\r\n",
-                        cfg.neededHumidity
-                )
-        );
-        makeRequest(
-                String.format(Locale.US,
-                        "rotations_per_day %d\r\n",
-                        cfg.rotationsPerDay
-                )
-        );
-        makeRequest(
-                String.format(Locale.US,
-                        "switch_to_program %d\r\n",
-                        cfg.currentProgram
-                )
-        );
+        requestor.sendConfig(cfg);
     }
 
     @Override
@@ -473,22 +428,15 @@ public class IncubatorStateActivity extends AppCompatActivity {
                     IncubatorStateActivity.this, IncubatorSettingsActivity.class
             );
             startActivity(intent);
+        } else if (item.getItemId() == R.id.video) {
+            Intent intent = new Intent(
+                    IncubatorStateActivity.this, IncubatorVideoActivity.class
+            );
+            startActivity(intent);
         }
         return super.onOptionsItemSelected(item);
     }
 
-    @Override
-    public void onRequestPermissionsResult(
-            int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
-        if (requestCode == STORAGE_REQUEST)
-        {
-            extStoragePermitted =
-                    (grantResults[0] == PackageManager.PERMISSION_GRANTED)
-                    && (grantResults[1] == PackageManager.PERMISSION_GRANTED);
-            ivIncubatorArchive.setEnabled(true);
-        }
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-    }
 
     @SuppressLint("ClickableViewAccessibility")
     @Override
@@ -499,21 +447,15 @@ public class IncubatorStateActivity extends AppCompatActivity {
                 (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
 
         archiver = new Archiver(getApplicationContext());
+        requestor = new Requestor(getApplicationContext());
 
         prefs = PreferenceManager.getDefaultSharedPreferences(this);
-        incubatorAddress = prefs.getString("incubator_address", DEFAULT_INCUBATOR_ADDRESS);
         manualRotationMode = prefs.getBoolean("manual_rotation_mode", false);
         prefsListener = new SharedPreferences.OnSharedPreferenceChangeListener() {
             @Override
             public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
                 Log.i(LOG_TAG, "sharedPreferenceChanged@" + key);
-                if (key.compareTo("incubator_address") == 0) {
-                    incubatorAddress = sharedPreferences.getString(
-                            key, DEFAULT_INCUBATOR_ADDRESS
-                    );
-                    requestConfig();
-                    requestState();
-                } else if (key.compareTo("manual_rotation_mode") == 0) {
+                if (key.compareTo("manual_rotation_mode") == 0) {
                     manualRotationMode = sharedPreferences.getBoolean(key, false);
                     mode = CURRENT_STATE_MODE;
                     updateIncubator();
@@ -522,20 +464,6 @@ public class IncubatorStateActivity extends AppCompatActivity {
         };
 
         prefs.registerOnSharedPreferenceChangeListener(prefsListener);
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            if (checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_DENIED
-                    || checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_DENIED)
-            {
-                extStoragePermitted = false;
-                requestPermissions(new String[]{
-                        Manifest.permission.READ_EXTERNAL_STORAGE,
-                        Manifest.permission.WRITE_EXTERNAL_STORAGE
-                }, STORAGE_REQUEST);
-            } else {
-                extStoragePermitted = true;
-            }
-        }
 
         state = new IncubatorState();
         cfg = new IncubatorConfig();
@@ -561,6 +489,7 @@ public class IncubatorStateActivity extends AppCompatActivity {
                         state.power = true;
                         state.internet = true;
 
+                        hLights.sendEmptyMessage(LIGHTS_REQUEST);
                         updateIncubator();
                         break;
                     case INCUBATOR_TURNED_OFF:
@@ -646,6 +575,33 @@ public class IncubatorStateActivity extends AppCompatActivity {
             }
         });
 
+        hLights = new Handler(Looper.myLooper(), new Handler.Callback() {
+            @Override
+            public boolean handleMessage(@NonNull Message msg) {
+                if (msg.what == LIGHTS_REQUEST) {
+                    requestor.requestLightsState(new RequestCallback() {
+                        @Override
+                        public void onAnswer(String answer) {
+                            boolean result = true;
+                            for (String line : answer.replace("\r\n", "\n").split("\n")) {
+                                if (line.compareTo("lights_off") == 0)
+                                    result = result && false;
+                                else if (line.compareTo("lights_on") == 0)
+                                    result = result && true;
+                            }
+                            state.lights = result;
+                        }
+
+                        @Override
+                        public void onFailure() {
+                            state.lights = false;
+                        }
+                    });
+                }
+                return true;
+            }
+        });
+
         reqTimer = new Timer("IncubatorStateActivity ReqTimer");
 
         rotTimer = new Timer("IncubatorStateActivity RotTimer");
@@ -665,6 +621,8 @@ public class IncubatorStateActivity extends AppCompatActivity {
                                       }
                                   });
                 }
+
+                writeToArchive();
             }
         }, 0, REQ_TIMEOUT);
 
@@ -787,17 +745,6 @@ public class IncubatorStateActivity extends AppCompatActivity {
         ivIncubatorScreen.setX(incubatorX + (SCREEN_X / BODY_WIDTH) * incubatorBodyWidth);
         ivIncubatorScreen.setY(incubatorY + (SCREEN_Y / BODY_HEIGHT) * incubatorBodyHeight);
         ivIncubatorScreen.setVisibility(View.VISIBLE);
-        ivIncubatorScreen.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                screenTaps++;
-                if (screenTaps < 2)
-                    return;
-
-                makeRequest("toggle_incubator\r\n");
-                screenTaps = 0;
-            }
-        });
         addContentView(ivIncubatorScreen, new ViewGroup.LayoutParams(
                 (int)(dIncubatorScreen.getIntrinsicWidth() * k),
                 (int)(dIncubatorScreen.getIntrinsicHeight() * k)
@@ -846,12 +793,12 @@ public class IncubatorStateActivity extends AppCompatActivity {
             public boolean onTouch(View v, MotionEvent event) {
                 if (event.getAction() == MotionEvent.ACTION_DOWN) {
                     if (mode == MANUAL_ROTATION_MODE) {
-                        makeRequest("rotate_left\r\n");
+                        requestor.sendRotationCommand(Requestor.ROTATE_LEFT);
                         rotateChamber(state.chamber - 1);
                     }
                 } else if (event.getAction() == MotionEvent.ACTION_UP) {
                     if (mode == MANUAL_ROTATION_MODE) {
-                        makeRequest("rotate_off\r\n");
+                        requestor.sendRotationCommand(Requestor.ROTATE_OFF);
                     }
                 }
 
@@ -932,12 +879,12 @@ public class IncubatorStateActivity extends AppCompatActivity {
             public boolean onTouch(View v, MotionEvent event) {
                 if (event.getAction() == MotionEvent.ACTION_DOWN) {
                      if (mode == MANUAL_ROTATION_MODE) {
-                        makeRequest("rotate_right\r\n");
-                        rotateChamber(state.chamber + 1);
+                         requestor.sendRotationCommand(Requestor.ROTATE_RIGHT);
+                         rotateChamber(state.chamber + 1);
                     }
                 } else if (event.getAction() == MotionEvent.ACTION_UP) {
                     if (mode == MANUAL_ROTATION_MODE) {
-                        makeRequest("rotate_off\r\n");
+                        requestor.sendRotationCommand(Requestor.ROTATE_OFF);
                     }
                 }
 
@@ -978,7 +925,6 @@ public class IncubatorStateActivity extends AppCompatActivity {
         ivIncubatorArchive.setX(incubatorX + (ARCHIVE_BTN_X / BODY_WIDTH) * incubatorBodyWidth);
         ivIncubatorArchive.setY(incubatorY + (ARCHIVE_BTN_Y / BODY_HEIGHT) * incubatorBodyHeight);
         ivIncubatorArchive.setVisibility(View.VISIBLE);
-        ivIncubatorArchive.setEnabled(extStoragePermitted);
         ivIncubatorArchive.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {

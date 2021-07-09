@@ -24,4 +24,6 @@
     <string name="cloud_archive_mode">Cloud archive mode</string>
     <string name="needed_temperature">Needed temperature</string>
     <string name="needed_humidity">Needed humidity</string>
+    <string name="turn_lights_on">Turn lights on</string>
+    <string name="turn_lights_off">Turn lights off</string>
 </resources>

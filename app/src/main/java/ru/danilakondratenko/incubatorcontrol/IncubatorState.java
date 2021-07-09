@@ -23,6 +23,8 @@ public class IncubatorState {
 
     public boolean isChanged;
 
+    public boolean lights;
+
     IncubatorState() {
         this.currentTemperature = NO_DATA_FLOAT;
         this.currentHumidity = NO_DATA_FLOAT;
@@ -36,6 +38,7 @@ public class IncubatorState {
         this.internet = false;
         this.power = false;
         this.isChanged = false;
+        this.lights = false;
     }
 
     public void clear() {
@@ -51,6 +54,7 @@ public class IncubatorState {
         this.internet = false;
         this.power = false;
         this.isChanged = false;
+        this.lights = false;
     }
 
     public String[] serialize() {
@@ -81,30 +85,40 @@ public class IncubatorState {
         for (String x : strs) {
             String[] args = x.trim().split(" ");
             if (args[0].compareTo("current_temp") == 0) {
+                result.internet = true;
                 if (args[1].compareToIgnoreCase("nan") != 0)
                     result.currentTemperature = Float.parseFloat(args[1]);
                 else
                     result.currentTemperature = NO_DATA_FLOAT;
             } else if (args[0].compareTo("current_humid") == 0) {
+                result.internet = true;
                 if (args[1].compareToIgnoreCase("nan") != 0)
                     result.currentHumidity = Float.parseFloat(args[1]);
                 else
                     result.currentHumidity = NO_DATA_FLOAT;
             } else if (args[0].compareTo("heater") == 0) {
+                result.internet = true;
                 result.heater = (Integer.parseInt(args[1]) > 0);
             } else if (args[0].compareTo("cooler") == 0) {
+                result.internet = true;
                 result.cooler = (Integer.parseInt(args[1]) > 0);
             } else if (args[0].compareTo("wetter") == 0) {
+                result.internet = true;
                 result.wetter = (Integer.parseInt(args[1]) > 0);
             } else if (args[0].compareTo("chamber") == 0) {
+                result.internet = true;
                 result.chamber = Integer.parseInt(args[1]);
             } else if (args[0].compareTo("uptime") == 0) {
+                result.internet = true;
                 result.uptime = Long.parseLong(args[1]);
             } else if (args[0].compareTo("overheat") == 0) {
+                result.internet = true;
                 result.overheat = true;
             }else if(args[0].compareTo("turned_off") == 0) {
+                result.internet = true;
                 result.power =false;
             } else if (args[0].compareTo("changed") == 0) {
+                result.internet = true;
                 result.isChanged = true;
             }
         }
