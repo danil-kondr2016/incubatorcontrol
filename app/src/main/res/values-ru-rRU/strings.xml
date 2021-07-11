@@ -2,7 +2,7 @@
 <resources>
     <string name="app_name">Управление инкубатором</string>
     <string name="overheat_error">Температура в инкубаторе может привести к гибели зародышей.</string>
-    <string name="overheat_error_title">Опасность</string>
+    <string name="danger">Опасность</string>
     <string name="settings">Настройки</string>
     <string name="title_activity_incubator_settings">Настройки</string>
     <string name="incubator_address">Адрес инкубатора</string>
@@ -26,4 +26,6 @@
     <string name="needed_humidity">Необходимая влажность</string>
     <string name="turn_lights_on">Включить свет</string>
     <string name="turn_lights_off">Выключить свет</string>
+    <string name="view_archive">Посмотреть видеоархив</string>
+    <string name="humidity_error">Проблемы с датчиком влажности</string>
 </resources>

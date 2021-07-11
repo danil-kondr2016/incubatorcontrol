@@ -3,6 +3,7 @@ package ru.danilakondratenko.incubatorcontrol;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.preference.PreferenceManager;
 
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.Bundle;
@@ -25,6 +26,8 @@ public class IncubatorVideoActivity extends AppCompatActivity {
 
     SharedPreferences prefs;
     SharedPreferences.OnSharedPreferenceChangeListener listener;
+
+    Button btnVideoArchive;
 
     private Timer lightsTimer;
     private boolean lights;
@@ -54,6 +57,16 @@ public class IncubatorVideoActivity extends AppCompatActivity {
                 requestor.sendLightsState(!lights);
                 lights = !lights;
                 updateLights();
+            }
+        });
+        btnVideoArchive = findViewById(R.id.viewArchiveButton);
+        btnVideoArchive.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                Intent intent = new Intent(
+                        IncubatorVideoActivity.this, IncubatorVideoArchiveActivity.class
+                );
+                startActivity(intent);
             }
         });
 

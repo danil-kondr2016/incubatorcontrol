@@ -46,16 +46,16 @@ public class IncubatorStateActivity extends AppCompatActivity {
     public static final int INCUBATOR_ACCESSIBLE = 0x11;
     public static final int INCUBATOR_INACCESSIBLE = 0x12;
     public static final int INCUBATOR_TURNED_OFF = 0x13;
-
-    public static final int OVERHEAT_ERROR = 0x14;
-    public static final int CHANGE_PHASE = 0x15;
-    public static final int NO_ERROR = 0x16;
-
-    public static final int CONFIG_AVAILABLE = 0x17;
+    public static final int CHANGE_PHASE = 0x14;
+    public static final int CONFIG_AVAILABLE = 0x15;
 
     public static final int ALARM_HEATER = 0x20;
 
     public static final int LIGHTS_REQUEST = 0x30;
+
+    public static final int NO_ERROR = 0x40;
+    public static final int OVERHEAT_ERROR = 0x41;
+    public static final int HUMIDITY_ERROR = 0x42;
 
     /* Values needed to calculate coordinates */
     static final float BODY_WIDTH = 605, BODY_HEIGHT = 870;
@@ -165,10 +165,11 @@ public class IncubatorStateActivity extends AppCompatActivity {
     private IncubatorConfig cfg;
     private int oldChamber = IncubatorState.CHAMBER_NEUTRAL;
 
-    Handler hIncubator, hOverheat, hConfig, hCoolerAnimation, hHeaterAlarm, hLights;
+    Handler hIncubator, hError, hConfig, hCoolerAnimation, hAlarm, hLights;
     private boolean needConfig = true, manualRotationMode;
 
     private boolean overheatNotified = false;
+    private boolean humidityErrorNotified = false;
 
     SharedPreferences prefs;
     SharedPreferences.OnSharedPreferenceChangeListener prefsListener;
@@ -372,10 +373,14 @@ public class IncubatorStateActivity extends AppCompatActivity {
                 else
                     hIncubator.sendEmptyMessage(INCUBATOR_TURNED_OFF);
 
-                if (state.overheat)
-                    hOverheat.sendEmptyMessage(OVERHEAT_ERROR);
-                else
-                    hOverheat.sendEmptyMessage(NO_ERROR);
+                if (!state.overheat && !Float.isNaN(state.currentHumidity)) {
+                    hError.sendEmptyMessage(NO_ERROR);
+                } else {
+                    if (state.overheat)
+                        hError.sendEmptyMessage(OVERHEAT_ERROR);
+                    if (Float.isNaN(state.currentHumidity))
+                        hError.sendEmptyMessage(HUMIDITY_ERROR);
+                }
 
                 writeToArchive();
             }
@@ -390,6 +395,7 @@ public class IncubatorStateActivity extends AppCompatActivity {
     }
 
     void requestConfig() {
+
         requestor.requestConfig(new RequestCallback() {
             @Override
             public void onAnswer(String answer) {
@@ -514,7 +520,7 @@ public class IncubatorStateActivity extends AppCompatActivity {
             }
         });
 
-        hOverheat = new Handler(Looper.myLooper(), new Handler.Callback() {
+        hError = new Handler(Looper.myLooper(), new Handler.Callback() {
 
             @Override
             public boolean handleMessage(@NonNull Message msg) {
@@ -522,8 +528,8 @@ public class IncubatorStateActivity extends AppCompatActivity {
                     Log.i(LOG_TAG, "OVERHEAT_ERROR");
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                         NotificationChannel channel = new NotificationChannel(
-                                "IncubatorOverheatError",
-                                "Incubator overheat error channel",
+                                getString(R.string.incubator_overheat_error_channel),
+                                getString(R.string.incubator_overheat_error_channel_description),
                                 NotificationManager.IMPORTANCE_HIGH
                         );
                         notificationManager.createNotificationChannel(channel);
@@ -531,18 +537,42 @@ public class IncubatorStateActivity extends AppCompatActivity {
 
                     NotificationCompat.Builder bld =
                             new NotificationCompat.Builder(IncubatorStateActivity.this,
-                                    "IncubatorOverheatError")
+                                    getString(R.string.incubator_overheat_error_channel))
                                     .setSmallIcon(android.R.drawable.ic_dialog_alert)
-                                    .setContentTitle(getString(R.string.overheat_error_title))
+                                    .setContentTitle(getString(R.string.danger))
                                     .setContentText(getString(R.string.overheat_error));
 
 
                     Notification notification = bld.build();
                     if (!overheatNotified)
-                        notificationManager.notify(1, notification);
+                        notificationManager.notify(OVERHEAT_ERROR, notification);
                     overheatNotified = true;
+                } else if (msg.what == HUMIDITY_ERROR) {
+                    Log.i(LOG_TAG, "HUMIDITY_ERROR");
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        NotificationChannel channel = new NotificationChannel(
+                                getString(R.string.incubator_humidity_error_channel),
+                                getString(R.string.incubator_humidity_error_channel_description),
+                                NotificationManager.IMPORTANCE_HIGH
+                        );
+                        notificationManager.createNotificationChannel(channel);
+                    }
+
+                    NotificationCompat.Builder bld =
+                            new NotificationCompat.Builder(IncubatorStateActivity.this,
+                                    getString(R.string.incubator_humidity_error_channel))
+                                    .setSmallIcon(android.R.drawable.ic_dialog_alert)
+                                    .setContentTitle(getString(R.string.danger))
+                                    .setContentText(getString(R.string.humidity_error));
+
+
+                    Notification notification = bld.build();
+                    if (!humidityErrorNotified)
+                        notificationManager.notify(HUMIDITY_ERROR, notification);
+                    humidityErrorNotified = true;
                 } else if (msg.what == NO_ERROR) {
                     overheatNotified = false;
+                    humidityErrorNotified = false;
                 }
                 return true;
             }
@@ -560,7 +590,7 @@ public class IncubatorStateActivity extends AppCompatActivity {
             }
         });
 
-        hHeaterAlarm = new Handler(Looper.myLooper(), new Handler.Callback() {
+        hAlarm = new Handler(Looper.myLooper(), new Handler.Callback() {
             @Override
             public boolean handleMessage(@NonNull Message msg) {
                 if (msg.what == ALARM_HEATER) {
@@ -636,7 +666,7 @@ public class IncubatorStateActivity extends AppCompatActivity {
             @Override
             public void run() {
                 if (state.overheat)
-                    hHeaterAlarm.sendEmptyMessage(ALARM_HEATER);
+                    hAlarm.sendEmptyMessage(ALARM_HEATER);
             }
         }, 0, ALARM_BLINKING_DURATION);
 
