@@ -6,19 +6,20 @@ import androidx.preference.PreferenceManager;
 import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.View;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
+import android.widget.ImageButton;
 import android.widget.Spinner;
-import android.widget.VideoView;
 
 import com.google.android.exoplayer2.MediaItem;
 import com.google.android.exoplayer2.SimpleExoPlayer;
 import com.google.android.exoplayer2.ui.PlayerView;
 
 import java.text.DateFormat;
-import java.text.SimpleDateFormat;
-import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.Timer;
 import java.util.TimerTask;
@@ -26,13 +27,18 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import retrofit2.Call;
 import retrofit2.Retrofit;
 import retrofit2.converter.scalars.ScalarsConverterFactory;
 
 public class IncubatorVideoArchiveActivity extends AppCompatActivity {
+    public static final long VIDEO_ARCHIVE_TIMEOUT = 60000;
+    private static final String LOG_TAG = "VideoArchive";
+
+    AtomicBoolean readyToPlay;
+
     String videoArchiveAddress;
 
     Requestor requestor;
@@ -42,14 +48,17 @@ public class IncubatorVideoArchiveActivity extends AppCompatActivity {
     SimpleExoPlayer player;
     Spinner spVideoList;
 
+    ImageButton ibPreviousVideo;
+    ImageButton ibNextVideo;
+
     Timer archiveTimer;
 
     SharedPreferences prefs;
     SharedPreferences.OnSharedPreferenceChangeListener listener;
 
-    String[] videoList;
+    ArrayList<String> videoList;
 
-    String[] getVideoArchiveList() {
+    void getVideoArchiveList(ArrayList<String> videoList) {
         Retrofit retrofit = new Retrofit.Builder()
                 .baseUrl("http://" + videoArchiveAddress)
                 .addConverterFactory(ScalarsConverterFactory.create())
@@ -57,38 +66,48 @@ public class IncubatorVideoArchiveActivity extends AppCompatActivity {
         VideoArchiveRequest request = retrofit.create(VideoArchiveRequest.class);
         Call<String> call = request.getArchiveList();
         Future<String> future = executor.submit(new Callable<String>() {
-
             @Override
             public String call() throws Exception {
                 return call.execute().body();
             }
         });
         String[] answerStrings;
+        ArrayList<String> result = new ArrayList<>();
 
         try {
-            answerStrings = future.get().split("\n");
-            return answerStrings;
-
+            String answer = future.get();
+            Log.i(LOG_TAG, answer);
+            answerStrings = answer.split("\n");
+            videoList.clear();
+            videoList.addAll(Arrays.asList(answerStrings));
         } catch (Exception e) {
             e.printStackTrace();
-            return null;
         }
     }
 
-    void updateVideoList() {
+    boolean updateVideoList() {
         DateFormat format = DateFormat.getDateTimeInstance();
-        videoList = getVideoArchiveList();
-        String[] dateNameList = new String[videoList.length];
-        for (int i = 0; i < videoList.length; i++) {
-            String video = videoList[i];
+        getVideoArchiveList(videoList);
+        if (videoList.size() == 0)
+            return false;
+        ArrayList<String> dateNameList = new ArrayList<>();
+        for (String video : videoList) {
+            if (video.length() == 0)
+                return false;
             long time = Long.parseLong(video) * 1000;
-            dateNameList[i] = format.format(new Date(time));
+            dateNameList.add(format.format(new Date(time)));
         }
-        ArrayAdapter<CharSequence> adapter =
+
+        int index = spVideoList.getSelectedItemPosition();
+
+        ArrayAdapter<String> adapter =
                 new ArrayAdapter<>(IncubatorVideoArchiveActivity.this,
                         android.R.layout.simple_spinner_item, dateNameList);
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         spVideoList.setAdapter(adapter);
+        spVideoList.setSelection(index);
+
+        return true;
     }
 
     void playVideo(String name) {
@@ -99,10 +118,18 @@ public class IncubatorVideoArchiveActivity extends AppCompatActivity {
         player.setPlayWhenReady(true);
     }
 
+    void playVideo(int index) {
+        String name = (String)spVideoList.getItemAtPosition(index);
+        playVideo(name);
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_incubator_video_archive);
+
+        readyToPlay = new AtomicBoolean(false);
+        videoList = new ArrayList<>();
 
         spVideoList = findViewById(R.id.videoArchiveList);
         videoView = findViewById(R.id.videoArchiveView);
@@ -121,7 +148,7 @@ public class IncubatorVideoArchiveActivity extends AppCompatActivity {
                     videoArchiveAddress =
                             sharedPreferences.getString(key, Requestor.DEFAULT_INCUBATOR_ADDRESS) +
                                     ":8080";
-                    updateVideoList();
+                    readyToPlay.set(updateVideoList());
                 }
             }
         };
@@ -130,18 +157,18 @@ public class IncubatorVideoArchiveActivity extends AppCompatActivity {
                 prefs.getString("incubator_address", Requestor.DEFAULT_INCUBATOR_ADDRESS) +
                         ":8080";
 
-        updateVideoList();
+        readyToPlay.set(updateVideoList());
         spVideoList.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
                 try {
+                    if (!readyToPlay.get())
+                        return;
                     DateFormat format = DateFormat.getDateTimeInstance();
                     String selectedVideo =
                             String.valueOf(
                                     format.parse(
                                             (String) parent.getSelectedItem()).getTime() / 1000);
-                    if (selectedVideo == null)
-                        return;
 
                     runOnUiThread(() -> playVideo(selectedVideo));
                 } catch (Exception e) {
@@ -155,22 +182,28 @@ public class IncubatorVideoArchiveActivity extends AppCompatActivity {
             }
         });
 
+        ibPreviousVideo = findViewById(R.id.previousVideoButton);
+        ibPreviousVideo.setOnClickListener((v) -> {
+            if (spVideoList.getSelectedItemPosition() - 1 >= 0)
+                spVideoList.setSelection(spVideoList.getSelectedItemPosition() - 1);
+        });
+
+        ibNextVideo = findViewById(R.id.nextVideoButton);
+        ibNextVideo.setOnClickListener((v) -> {
+            if (spVideoList.getSelectedItemPosition() + 1 < videoList.size())
+                spVideoList.setSelection(spVideoList.getSelectedItemPosition() + 1);
+        });
+
         archiveTimer = new Timer("IncubatorVideoArchiveActivity Timer");
         archiveTimer.schedule(new TimerTask() {
             @Override
             public void run() {
-                while (videoList.length == 0) {
-                    runOnUiThread(() -> updateVideoList());
-                }
+                runOnUiThread(() -> {
+                    readyToPlay.set(updateVideoList());
+                });
             }
-        }, 0, 60000);
+        }, 0, VIDEO_ARCHIVE_TIMEOUT);
 
-        playVideo(videoList[0]);
-    }
-
-    @Override
-    protected void onResume() {
-        super.onResume();
-        updateVideoList();
+        playVideo(videoList.size() - 1);
     }
 }
